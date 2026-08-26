@@ -7,6 +7,11 @@ step, no server, no install.
 Open `reflux.html` in any modern browser, locally or from a share. There is
 nothing to run and nothing to configure.
 
+`index.html` is a splash page listing the eight tools, each linking straight to
+its tab. It is the landing page when the repository is served over GitHub Pages;
+opened from disk it works the same way, as long as it sits next to
+`reflux.html`.
+
 ---
 
 ## Tools
@@ -47,6 +52,26 @@ Reads exported peak tables and produces a grouped, cross-sample impurity table.
 
 Sample name, sample ID and column order are editable in the app and flow
 through to every export. The originally parsed values are retained internally.
+
+### Deep links
+
+Every tab has a URL. Append the tab key as a hash and the toolbox opens on that
+tool:
+
+| Link | Opens |
+|---|---|
+| `reflux.html` | Charge Amount, the default tab |
+| `reflux.html#charge` `#solution` `#ymb` `#units` | those calculators |
+| `reflux.html#agiscale` `#equation` | those calculators |
+| `reflux.html#ipcal` | Impurity Profile |
+| `reflux.html#chem` | Structure Editor |
+
+The hash is honoured on load and on `hashchange`, and switching tabs in the app
+keeps the URL in step (via `replaceState`, so the back button is not flooded).
+A hash is only acted on when it names a key in `TABS`, so a stale or mistyped
+link opens the default tab rather than failing on a missing panel. That is what
+the cards on `index.html` use, and `reflux_checks.cjs` asserts every one of
+those links names a tab that still exists.
 
 ### Structure Editor
 
@@ -142,7 +167,13 @@ structure engine already is, which is a separate job.
 
 ## Structure
 
-One file. Three authored scripts inside it, plus two vendored engine blocks:
+Two files. `index.html` is the splash page: one stylesheet, one script in an
+IIFE, no inline handlers, and no dependency on `reflux.html` beyond the links.
+It shares the toolbox palette, typefaces and theme key deliberately, so a theme
+chosen on either page is the one the other opens with.
+
+`reflux.html` is the toolbox itself: three authored scripts, plus two vendored
+engine blocks.
 
 - The calculator script runs at global scope, because the calculator panels use
   inline `onclick` handlers that need to resolve there.
@@ -205,8 +236,10 @@ also runs the Mode 2 over-subtraction case, where a blank larger than the
 sample drives the corrected reference area negative, since that is the
 condition under which Area% output previously came back blank.
 
-`mutate.sh` injects twenty-seven deliberate defects and confirms each one turns
-a suite red. A mutation that is not caught is a gap in the tests, not a pass. A
+`mutate.sh` injects thirty-three deliberate defects and confirms each one turns
+a suite red. Five of them target the splash page and the deep links, two by
+mutating `index.html` rather than `reflux.html`, so the cross-file link
+assertions are proven rather than assumed. A mutation that is not caught is a gap in the tests, not a pass. A
 mutation whose target string no longer exists is also a gap, because it has
 silently stopped testing anything, so it is reported as `STALE` and fails the
 run. Note that mutation results only mean anything against a green baseline;
@@ -232,9 +265,10 @@ not another jsdom assertion.
   their IIFEs.
 - The vendored engine blocks are not hand-edited. To change them, replace the
   payload and update its fingerprint in the header comment.
-- Adding a tab means three edits that must stay in step: the button in
-  `.tab-bar`, the `id="panel-<key>"` div, and the key in the `TABS` array. The
-  static checker verifies the three agree.
+- Adding a tab means four edits that must stay in step: the button in
+  `.tab-bar`, the `id="panel-<key>"` div, the key in the `TABS` array, and a
+  card on `index.html` linking to `reflux.html#<key>`. The static checker
+  verifies all four agree, including the card order.
 - Run all three suites plus the mutation script before committing.
 
 ---

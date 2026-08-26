@@ -108,6 +108,30 @@ const tick=()=>new Promise(r=>setTimeout(r,0));
   window.switchTab('units');
   chk(!d.body.classList.contains('wide'),'wide layout removed leaving the chem tab');
 
+  // ---- deep links -------------------------------------------------------
+  // index.html points at one tool with reflux.html#<tab>. Both the live
+  // hashchange path and the load-time path have to resolve, and an unknown
+  // hash has to fall back rather than reach getElementById("panel-<junk>").
+  chk(window.location.hash==='#units','switching a tab writes the hash (got "'+window.location.hash+'")');
+  window.location.hash='#ipcal';
+  window.dispatchEvent(new window.HashChangeEvent('hashchange'));
+  chk(d.getElementById('panel-ipcal').classList.contains('active'),'hashchange to #ipcal switches tab');
+  window.location.hash='#nosuchtab';
+  let hashThrew=false;
+  try{ window.dispatchEvent(new window.HashChangeEvent('hashchange')); }catch(e){ hashThrew=true; }
+  chk(!hashThrew,'unknown hash does not throw');
+  chk(d.getElementById('panel-ipcal').classList.contains('active'),'unknown hash leaves the current tab alone');
+
+  const boot=(hash)=>{
+    const dd=new JSDOM(html,{runScripts:'dangerously',pretendToBeVisual:true,url:'https://localhost/'+hash,
+      beforeParse(w){w.ExcelJS={};w.XLSX={utils:{},writeFile(){}};w.math={evaluate:()=>0};}});
+    return dd.window.document;
+  };
+  chk(boot('#ipcal').getElementById('panel-ipcal').classList.contains('active'),'deep link #ipcal opens that tab on load');
+  chk(boot('#chem').getElementById('panel-chem').classList.contains('active'),'deep link #chem opens that tab on load');
+  chk(boot('#nosuchtab').getElementById('panel-charge').classList.contains('active'),'unknown hash on load falls back to the default tab');
+  chk(boot('').getElementById('panel-charge').classList.contains('active'),'no hash on load opens the default tab');
+
   console.log('\n'+(fails.length?fails.length+' FAILURES':'ALL GREEN'));
   process.exit(fails.length?1:0);
 })();

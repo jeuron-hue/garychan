@@ -928,7 +928,16 @@ function toggleTheme(){const el=document.documentElement;const cur=el.getAttribu
 try{const saved=localStorage.getItem("reflux-theme");if(saved){document.documentElement.setAttribute("data-theme",saved);}}catch(e){}
 
 const TABS=["charge","solution","ymb","units","agiscale","equation","ipcal","chem"];
-function switchTab(id){document.querySelectorAll(".calc-panel").forEach(p=>p.classList.remove("active"));document.querySelectorAll(".tab-btn").forEach(b=>b.classList.remove("active"));document.getElementById("panel-"+id).classList.add("active");document.querySelectorAll(".tab-btn")[TABS.indexOf(id)].classList.add("active");document.body.classList.toggle("wide",id==="ipcal"||id==="chem");}
+function switchTab(id){document.querySelectorAll(".calc-panel").forEach(p=>p.classList.remove("active"));document.querySelectorAll(".tab-btn").forEach(b=>b.classList.remove("active"));document.getElementById("panel-"+id).classList.add("active");document.querySelectorAll(".tab-btn")[TABS.indexOf(id)].classList.add("active");document.body.classList.toggle("wide",id==="ipcal"||id==="chem");try{history.replaceState(null,"","#"+id);}catch(e){}}
+
+// Deep links, so index.html can point at one tool: reflux.html#chem. The hash is
+// only ever honoured when it names a key in TABS, so a stale or hand-typed link
+// lands on the default tab instead of throwing on a missing panel. replaceState
+// does not fire hashchange, so writing the hash above cannot loop back here.
+function tabFromHash(){var h=(location.hash||"").replace(/^#/,"");return TABS.indexOf(h)>=0?h:null;}
+function applyHashTab(){var t=tabFromHash();if(t)switchTab(t);}
+window.addEventListener("hashchange",applyHashTab);
+applyHashTab();
 
 function v(id){return parseFloat(document.getElementById(id).value);}
 function sv(id){return document.getElementById(id).value;}

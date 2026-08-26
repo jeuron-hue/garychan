@@ -83,6 +83,31 @@ chk(JSON.stringify(btns)===JSON.stringify(arr),'tab button order matches TABS');
 chk(arr.length===8,'eight tabs (got '+arr.length+')');
 arr.forEach(t=>chk((app.match(new RegExp('id="panel-'+t+'"','g'))||[]).length===1,'panel-'+t+' declared once'));
 
+// deep links: index.html points at individual tools via the URL hash
+chk(/window\.addEventListener\("hashchange"/.test(app),'hash routing wired to hashchange');
+chk(/TABS\.indexOf\(h\)/.test(app),'hash validated against TABS before it reaches switchTab');
+chk(/history\.replaceState/.test(app),'tab switch keeps the URL hash in step');
+
+// splash page links resolve to real tabs. A renamed tab must not silently
+// orphan a card on index.html, so the two files are checked against each other.
+const SPLASH=path.join(path.dirname(path.resolve(FILE)),'index.html');
+if(fs.existsSync(SPLASH)){
+  const idxRaw=fs.readFileSync(SPLASH,'utf8');
+  const idx=idxRaw.slice(idxRaw.split('-->')[0].length);   // drop its build-notes header, as above
+  const links=[...idx.matchAll(/href="reflux\.html#([a-z]+)"/g)].map(m=>m[1]);
+  chk(links.length===arr.length,'splash has one deep link per tab (got '+links.length+' for '+arr.length+' tabs)');
+  const bad=links.filter(x=>!arr.includes(x));
+  chk(bad.length===0,'every splash deep link targets a real tab (bad: '+bad+')');
+  chk(JSON.stringify(links)===JSON.stringify(arr),'splash card order matches tab order');
+  chk(!/kaneka|KSC|ChemSketch/i.test(idxRaw),'no employer or prior product string on the splash page');
+  chk(!/[\u200b-\u200f\u202a-\u202e\ufeff]/.test(idxRaw),'no invisible/bidi characters on the splash page');
+  chk((idx.match(/reflux-theme/g)||[]).length===2,'splash shares the single theme key, read and write');
+  chk(/href="reflux\.html"/.test(idx),'splash offers a plain link to the toolbox');
+  chk(!/on(?:click|change|input)="/.test(idx),'splash binds no inline handlers');
+}else{
+  chk(false,'index.html splash page present');
+}
+
 // 7. profiler CSS fully scoped, no leakage
 const css=app.match(/IMPURITY PROFILE \(scoped\) ={4,} \*\/\n([\s\S]*?)\n<\/style>/)[1];
 const sels=[...css.matchAll(/^([^{}\n]+)\{/gm)].map(m=>m[1].trim());

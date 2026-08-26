@@ -17,6 +17,20 @@ open('mut.html','w',encoding='utf-8').write(s.replace(old,new,1))"
   if node "$4" mut.html >/dev/null 2>&1; then echo "NOT CAUGHT  $1  <-- checker gap"; fail=$((fail+1));
   else echo "caught      $1"; pass=$((pass+1)); fi
 }
+runsplash(){ # name, old, new -- mutates index.html, checks against the real SRC
+  [ -f index.html ] || { echo "STALE       $1  <-- index.html missing"; stale=$((stale+1)); return; }
+  cp index.html .idx.bak
+  python3 -c "
+import sys,io
+s=open('index.html',encoding='utf-8').read()
+old,new='''$2''','''$3'''
+assert old in s, 'MUTATION TARGET NOT FOUND: $1'
+open('index.html','w',encoding='utf-8').write(s.replace(old,new,1))"
+  if [ $? -ne 0 ]; then mv .idx.bak index.html; echo "STALE       $1  <-- target missing, mutation tests nothing"; stale=$((stale+1)); return; fi
+  if node reflux_checks.cjs "$SRC" >/dev/null 2>&1; then echo "NOT CAUGHT  $1  <-- checker gap"; fail=$((fail+1));
+  else echo "caught      $1"; pass=$((pass+1)); fi
+  mv .idx.bak index.html
+}
 # --- static checker mutations ---
 run "employer string reintroduced" "Gary Chan" "Gary Chan, KSC" reflux_checks.cjs
 run "profiler CSS unscoped" "#panel-ipcal .sample-card {" ".sample-card {" reflux_checks.cjs
@@ -46,6 +60,12 @@ run "structure-editor tab dropped from the bar" "<button class=\"tab-btn\" oncli
 run "missing-engine guard removed" "if (typeof Kekule === 'undefined' ||" "if (false \&\& typeof Kekule === 'undefined' ||" behave.cjs
 run "static UI no longer built at load" "    buildElementPicker();\n    buildTemplateButtons();" "    buildElementPicker();" behave.cjs
 run "activation no longer boots the editor" "if (panel.classList.contains('active')){ obs.disconnect(); bootEditor(); }" "if (false){ obs.disconnect(); bootEditor(); }" behave.cjs
+echo "--- deep links and splash page ---"
+run "hash no longer validated against TABS" "TABS.indexOf(h)>=0?h:null" "h||null" behave.cjs
+run "hashchange listener dropped" "window.addEventListener(\"hashchange\",applyHashTab);" "" behave.cjs
+run "tab switch stops updating the hash" "try{history.replaceState(null,\"\",\"#\"+id);}catch(e){}" "" behave.cjs
+runsplash "splash link points at a tab that does not exist" "href=\"reflux.html#chem\">" "href=\"reflux.html#chemistry\">"
+runsplash "splash card loses its deep link" "href=\"reflux.html#ipcal\">" "href=\"reflux.html\">"
 echo "--- end-to-end arithmetic ---"
 run "RRT inverted" "var rrt = cp.rt / refPeak.rt;" "var rrt = refPeak.rt / cp.rt;" e2e.cjs
 run "v4 Area% fix reverted (negatives back in denominator)" "cp.corrected > 0 ? cp.corrected : 0" "cp.corrected" e2e.cjs
