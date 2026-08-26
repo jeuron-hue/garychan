@@ -67,10 +67,6 @@
   .tool .name{font-family:var(--font-mono);font-size:13px;font-weight:600;color:var(--accent);letter-spacing:0.2px;}
   .tool .desc{font-size:12.5px;color:var(--text-secondary);line-height:1.55;}
 
-  .note{margin-top:26px;padding:14px 16px;border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:6px;background:var(--bg-card);font-size:12.5px;color:var(--text-secondary);}
-  .note b{color:var(--text-primary);font-weight:600;}
-  .note code{font-family:var(--font-mono);font-size:11.5px;background:var(--bg-input);padding:1px 5px;border-radius:3px;}
-
   .footer{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;padding:12px 24px;border-top:1px solid var(--border);background:var(--bg-secondary);font-family:var(--font-mono);font-size:10px;color:var(--text-muted);}
   .footer a{color:var(--text-muted);text-decoration:none;}
   .footer a:hover{color:var(--accent);}
@@ -97,7 +93,7 @@
     <h2>Process chemistry toolbox</h2>
     <p>Eight tools in one page. Calculators for charging, solution prep, yield and mass balance,
        units and agitation scale-up; a chromatography impurity profile parser; and an offline 2D
-       structure editor. Nothing to install and nothing to configure.</p>
+       structure editor.</p>
     <a class="open-all" href="reflux.html">Open the toolbox &rarr;</a>
   </div>
 
@@ -141,16 +137,9 @@
 
     <a class="tool" href="reflux.html#chem">
       <span class="name">Structure Editor</span>
-      <span class="desc">Draw a 2D structure and copy it straight into Word or PowerPoint. The drawing engine ships inside the page, so it works with the network disconnected.</span>
+      <span class="desc">Draw a 2D structure and copy it straight into Word or PowerPoint. Bonds, rings, charges, stereo wedges and ten ring templates.</span>
     </a>
 
-  </div>
-
-  <div class="note">
-    <b>Works offline.</b> The toolbox is a single HTML file. Save <code>reflux.html</code> and open it
-    from your own machine and every tool keeps working, the structure editor included. Three
-    libraries load from a CDN for the spreadsheet exports and the Equation Builder; without a
-    network those two features go quiet and everything else carries on.
   </div>
 
 </div>
