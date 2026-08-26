@@ -1,0 +1,5 @@
+# The suites parse the HTML with LF-anchored regexes (reflux_checks.cjs
+# matches "*/\n" when pulling the scoped CSS blocks), and mutate.sh is a
+# bash script. A CRLF checkout breaks both, so pin every text file to LF
+# regardless of platform or the user's core.autocrlf setting.
+* text=auto eol=lf
