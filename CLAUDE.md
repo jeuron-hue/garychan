@@ -11,7 +11,9 @@ build step, no server, no bundler, no npm dependencies at runtime.
   away, not adopted.
 - No prior-employer strings anywhere, including git history and code comments.
   Contact address is jeuron@gmail.com. Copyright line is "© Gary Chan".
-- Version lives in the HTML comment header only, never rendered on the page.
+- Version lives in the HTML comment header and is rendered into reflux.html's
+  page title from APP_VER. The two must stay in step; reflux_checks.cjs asserts
+  they match. index.html carries no version.
 - Each tool's CSS is scoped to its own `#panel-<key>` selector, never `:root`.
   The panels were separate tools originally and share custom property names.
 - Any script other than the calculator script is wrapped in an IIFE and binds
