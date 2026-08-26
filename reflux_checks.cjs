@@ -6,6 +6,20 @@ let fails=[]; const chk=(c,m)=>{console.log((c?'PASS  ':'FAIL  ')+m); if(!c)fail
 const head=s.split('-->')[0];              // build-notes header
 const doc=s.slice(head.length);            // everything the browser acts on
 
+// checkout hygiene. Everything below parses the document with LF-anchored
+// regexes (the scoped-CSS pulls match "*/\n"), so a CRLF checkout turns them
+// into null matches and the checker dies without explaining why. The pin has
+// to hold regardless of platform or the clone's core.autocrlf setting.
+chk(!/\r\n/.test(s),'source checked out with LF line endings');
+const ATTRS=path.join(path.dirname(path.resolve(FILE)),'.gitattributes');
+if(fs.existsSync(ATTRS)){
+  const attrs=fs.readFileSync(ATTRS,'utf8');
+  chk(/^\*\s+text=auto\s+eol=lf\s*$/m.test(attrs),'every text file pinned to LF on checkout');
+  chk(!/eol=crlf/.test(attrs),'no attribute rule checks anything out as CRLF');
+}else{
+  chk(false,'.gitattributes present');
+}
+
 // Vendored engine blocks are carved out before any structural scan. They are
 // 2.7MB of minified third-party code containing HTML-shaped substrings
 // ("<html", "<body", "<script>" inside error-message strings) which would

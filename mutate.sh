@@ -12,7 +12,7 @@ import sys,io
 s=open('mut.html',encoding='utf-8').read()
 old,new='''$2''','''$3'''
 assert old in s, 'MUTATION TARGET NOT FOUND: $1'
-open('mut.html','w',encoding='utf-8').write(s.replace(old,new,1))"
+open('mut.html','w',encoding='utf-8',newline='').write(s.replace(old,new,1))"
   if [ $? -ne 0 ]; then echo "STALE       $1  <-- target missing, mutation tests nothing"; stale=$((stale+1)); return; fi
   if node "$4" mut.html >/dev/null 2>&1; then echo "NOT CAUGHT  $1  <-- checker gap"; fail=$((fail+1));
   else echo "caught      $1"; pass=$((pass+1)); fi
@@ -25,11 +25,34 @@ import sys,io
 s=open('index.html',encoding='utf-8').read()
 old,new='''$2''','''$3'''
 assert old in s, 'MUTATION TARGET NOT FOUND: $1'
-open('index.html','w',encoding='utf-8').write(s.replace(old,new,1))"
+open('index.html','w',encoding='utf-8',newline='').write(s.replace(old,new,1))"
   if [ $? -ne 0 ]; then mv .idx.bak index.html; echo "STALE       $1  <-- target missing, mutation tests nothing"; stale=$((stale+1)); return; fi
   if node reflux_checks.cjs "$SRC" >/dev/null 2>&1; then echo "NOT CAUGHT  $1  <-- checker gap"; fail=$((fail+1));
   else echo "caught      $1"; pass=$((pass+1)); fi
   mv .idx.bak index.html
+}
+runattrs(){ # name, old, new -- mutates .gitattributes, checks against the real SRC
+  [ -f .gitattributes ] || { echo "STALE       $1  <-- .gitattributes missing"; stale=$((stale+1)); return; }
+  cp .gitattributes .attrs.bak
+  python3 -c "
+import sys,io
+s=open('.gitattributes',encoding='utf-8').read()
+old,new='''$2''','''$3'''
+assert old in s, 'MUTATION TARGET NOT FOUND: $1'
+open('.gitattributes','w',encoding='utf-8',newline='').write(s.replace(old,new,1))"
+  if [ $? -ne 0 ]; then mv .attrs.bak .gitattributes; echo "STALE       $1  <-- target missing, mutation tests nothing"; stale=$((stale+1)); return; fi
+  if node reflux_checks.cjs "$SRC" >/dev/null 2>&1; then echo "NOT CAUGHT  $1  <-- checker gap"; fail=$((fail+1));
+  else echo "caught      $1"; pass=$((pass+1)); fi
+  mv .attrs.bak .gitattributes
+}
+runcrlf(){ # name -- rewrites SRC with CRLF endings, which must be rejected
+  python3 -c "
+s=open('$SRC',encoding='utf-8',newline='').read()
+assert '\r\n' not in s, 'SOURCE ALREADY CRLF: $1'
+open('mut.html','w',encoding='utf-8',newline='').write(s.replace('\n','\r\n'))"
+  if [ $? -ne 0 ]; then echo "STALE       $1  <-- could not build a CRLF copy"; stale=$((stale+1)); return; fi
+  if node reflux_checks.cjs mut.html >/dev/null 2>&1; then echo "NOT CAUGHT  $1  <-- checker gap"; fail=$((fail+1));
+  else echo "caught      $1"; pass=$((pass+1)); fi
 }
 # --- static checker mutations ---
 run "employer string reintroduced" "Gary Chan" "Gary Chan, KSC" reflux_checks.cjs
@@ -66,6 +89,10 @@ run "hashchange listener dropped" "window.addEventListener(\"hashchange\",applyH
 run "tab switch stops updating the hash" "try{history.replaceState(null,\"\",\"#\"+id);}catch(e){}" "" behave.cjs
 runsplash "splash link points at a tab that does not exist" "href=\"reflux.html#chem\">" "href=\"reflux.html#chemistry\">"
 runsplash "splash card loses its deep link" "href=\"reflux.html#ipcal\">" "href=\"reflux.html\">"
+echo "--- checkout hygiene ---"
+runattrs "LF pin dropped from .gitattributes" "* text=auto eol=lf" ""
+runattrs "checkout pinned back to CRLF" "eol=lf" "eol=crlf"
+runcrlf  "source checked out with CRLF endings"
 echo "--- end-to-end arithmetic ---"
 run "RRT inverted" "var rrt = cp.rt / refPeak.rt;" "var rrt = refPeak.rt / cp.rt;" e2e.cjs
 run "v4 Area% fix reverted (negatives back in denominator)" "cp.corrected > 0 ? cp.corrected : 0" "cp.corrected" e2e.cjs
