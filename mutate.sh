@@ -93,6 +93,17 @@ echo "--- checkout hygiene ---"
 runattrs "LF pin dropped from .gitattributes" "* text=auto eol=lf" ""
 runattrs "checkout pinned back to CRLF" "eol=lf" "eol=crlf"
 runcrlf  "source checked out with CRLF endings"
+echo "--- responsive layout ---"
+run "tab buttons drop below a 44px touch target" ".tab-btn{min-height:44px;}" ".tab-btn{min-height:24px;}" reflux_checks.cjs
+run "theme toggle reverts to a 18x32 target" ".theme-toggle{min-width:44px;min-height:44px;" ".theme-toggle{min-width:18px;min-height:32px;" reflux_checks.cjs
+run "inputs lose their touch sizing" ".field input,.field select,.field .title-input{min-height:44px;}" "" reflux_checks.cjs
+run "footer link loses its touch sizing" ".footer a{display:inline-flex;align-items:center;min-height:44px;padding:0 4px;}" ".footer a{display:inline-flex;align-items:center;padding:0 4px;}" reflux_checks.cjs
+run "tablet breakpoint removed" "@media(max-width:900px){.content{padding:16px;}.tab-bar{padding:0 12px;}.tab-btn{padding:12px 14px;}}" "" reflux_checks.cjs
+run "field cap lifted so inputs balloon again" "max-width:240px" "max-width:none" reflux_checks.cjs
+run "free-text fields lose their opt-out from the cap" ".field:has(.eq-input),.field:has(.title-input){max-width:none;}" "" reflux_checks.cjs
+run "active tab no longer scrolled into view" "if(ab.scrollIntoView)try{ab.scrollIntoView({block:\"nearest\",inline:\"center\"});}catch(e){}" "" reflux_checks.cjs
+runsplash "splash loses its touch-pointer block" "@media(pointer:coarse)" "@media(pointer:fine)"
+runsplash "splash loses its tablet breakpoint" "@media(max-width:900px){.content{padding:24px 16px 32px;}}" ""
 echo "--- end-to-end arithmetic ---"
 run "RRT inverted" "var rrt = cp.rt / refPeak.rt;" "var rrt = refPeak.rt / cp.rt;" e2e.cjs
 run "v4 Area% fix reverted (negatives back in denominator)" "cp.corrected > 0 ? cp.corrected : 0" "cp.corrected" e2e.cjs

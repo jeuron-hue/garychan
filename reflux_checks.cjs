@@ -118,9 +118,30 @@ if(fs.existsSync(SPLASH)){
   chk((idx.match(/reflux-theme/g)||[]).length===2,'splash shares the single theme key, read and write');
   chk(/href="reflux\.html"/.test(idx),'splash offers a plain link to the toolbox');
   chk(!/on(?:click|change|input)="/.test(idx),'splash binds no inline handlers');
+  chk(/@media\(pointer:coarse\)/.test(idx),'splash carries the same touch-pointer block');
+  chk(/@media\(max-width:900px\)/.test(idx),'splash carries the tablet breakpoint');
+  chk(idx.indexOf('@media(max-width:900px)')<idx.indexOf('@media(max-width:600px)'),'splash declares the tablet query before the phone query');
 }else{
   chk(false,'index.html splash page present');
 }
+
+// responsive shell. The page shipped with a single 600px breakpoint, so a
+// tablet got the desktop layout verbatim and every control stayed mouse-sized.
+// These pin the parts that make it usable on a small or touch screen. jsdom has
+// no layout engine, so what can be asserted here is the CSS text, not the boxes
+// it produces; the measurements themselves were taken in a real browser.
+chk(/@media\(max-width:900px\)/.test(s),'tablet breakpoint present');
+chk(s.indexOf('@media(max-width:900px)')<s.indexOf('@media(max-width:600px)'),
+    'tablet query declared before the phone query so the narrower one wins');
+const touch=(s.match(/@media\(pointer:coarse\)\{([\s\S]*?)\n  \}/)||[])[1]||'';
+chk(!!touch,'touch-pointer block present');
+chk(/\.tab-btn\{min-height:44px;\}/.test(touch),'tab buttons are 44px targets on touch');
+chk(/\.theme-toggle\{min-width:44px;min-height:44px/.test(touch),'theme toggle is a 44px target on touch');
+chk(/\.field input,\.field select,\.field \.title-input\{min-height:44px;\}/.test(touch),'inputs are 44px targets on touch');
+chk(/\.footer a\{[^}]*min-height:44px/.test(touch),'footer link is a 44px target on touch');
+chk(/\.field\{[^}]*max-width:240px/.test(s),'field width capped so numeric inputs stop ballooning');
+chk(/\.field:has\(\.eq-input\),\.field:has\(\.title-input\)\{max-width:none;\}/.test(s),'free-text fields opt out of the field cap');
+chk(/if\(ab\.scrollIntoView\)try\{ab\.scrollIntoView\(/.test(app),'tab switch scrolls the active tab into view, guarded');
 
 // 7. profiler CSS fully scoped, no leakage
 const css=app.match(/IMPURITY PROFILE \(scoped\) ={4,} \*\/\n([\s\S]*?)\n<\/style>/)[1];

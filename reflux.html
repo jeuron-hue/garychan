@@ -138,7 +138,16 @@
   .header-right{display:flex;align-items:center;gap:12px;}
   .theme-toggle{font-family:var(--font-mono);font-size:18px;background:none;border:none;cursor:pointer;padding:4px;color:var(--text-secondary);transition:color 0.2s;}
   .theme-toggle:hover{color:var(--text-primary);}
-  .tab-bar{display:flex;gap:0;padding:0 24px;background:var(--bg-secondary);border-bottom:1px solid var(--border);overflow-x:auto;scrollbar-width:thin;}
+  /* Eight tabs overflow a phone-width bar. The paired local/scroll gradients are
+     the standard scroll-shadow trick: the local layers ride the content and mask
+     the shadow at whichever end is already reached, so a shadow shows only where
+     there is more tab to scroll to. Without it the bar reads as four tabs. */
+  .tab-bar{display:flex;gap:0;padding:0 24px;border-bottom:1px solid var(--border);overflow-x:auto;scrollbar-width:thin;scroll-behavior:smooth;-webkit-overflow-scrolling:touch;
+    background:linear-gradient(to right,var(--bg-secondary) 40%,transparent) left center/28px 100% no-repeat local,
+               linear-gradient(to left,var(--bg-secondary) 40%,transparent) right center/28px 100% no-repeat local,
+               radial-gradient(farthest-side at 0 50%,rgba(0,0,0,0.16),transparent) left center/10px 100% no-repeat scroll,
+               radial-gradient(farthest-side at 100% 50%,rgba(0,0,0,0.16),transparent) right center/10px 100% no-repeat scroll,
+               var(--bg-secondary);}
   .tab-btn{font-family:var(--font-mono);font-size:12px;font-weight:500;padding:12px 20px;background:none;border:none;color:var(--text-secondary);cursor:pointer;white-space:nowrap;border-bottom:2px solid transparent;transition:all 0.2s;}
   .tab-btn:hover{color:var(--text-primary);background:var(--accent-dim);}
   .tab-btn.active{color:var(--accent);border-bottom-color:var(--accent);}
@@ -152,7 +161,11 @@
   [data-theme="light"] .header{box-shadow:0 1px 3px rgba(0,0,0,0.06);}
   .card-label{font-family:var(--font-mono);font-size:11px;font-weight:500;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:12px;}
   .field-row{display:flex;gap:12px;align-items:flex-end;margin-bottom:10px;flex-wrap:wrap;}
-  .field{display:flex;flex-direction:column;gap:4px;flex:1;min-width:110px;}
+  /* flex:1 alone sized a field by how many shared its row, so a two-field row
+     stretched 6-character numbers to ~290px. The cap evens the rows out; the
+     free-text fields that genuinely want the width opt back out below. */
+  .field{display:flex;flex-direction:column;gap:4px;flex:1;min-width:110px;max-width:240px;}
+  .field:has(.eq-input),.field:has(.title-input){max-width:none;}
   .field label{font-size:11px;color:var(--text-secondary);font-weight:500;}
   .field input,.field select{font-family:var(--font-mono);font-size:13px;padding:8px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text-primary);outline:none;transition:border-color 0.2s;}
   .field input:focus,.field select:focus{border-color:var(--border-focus);box-shadow:0 0 0 2px var(--accent-dim);}
@@ -212,7 +225,23 @@
   .footer a{color:var(--accent);text-decoration:none;}
   .footer a:hover{text-decoration:underline;}
   .mc-solved{background:var(--accent-dim);border-color:var(--accent)!important;}
-  @media(max-width:600px){.content{padding:12px;}.field-row{flex-direction:column;gap:8px;}.field{min-width:100%;}.tab-bar{padding:0 8px;}.tab-btn{padding:10px 12px;font-size:11px;}.pres-sync-row{flex-direction:column;}}
+  /* Tablet and small-laptop band. Below 900px the desktop rules used to apply
+     verbatim, so a 700px window kept 24px padding and a content column it could
+     not fill. Declared before the 600px block so the narrower one still wins. */
+  @media(max-width:900px){.content{padding:16px;}.tab-bar{padding:0 12px;}.tab-btn{padding:12px 14px;}}
+  @media(max-width:600px){.content{padding:12px;}.field-row{flex-direction:column;gap:8px;}.field{min-width:100%;max-width:none;}.tab-bar{padding:0 8px;}.tab-btn{padding:10px 12px;font-size:11px;}.pres-sync-row{flex-direction:column;}.header{padding:10px 12px;}.header h1{font-size:13px;}}
+  /* Touch input, keyed off the pointer rather than the width so a large tablet
+     gets it too. The toggle measured 18x32 and the row-remove control 28x26;
+     44px is the smallest reliably hittable target. */
+  @media(pointer:coarse){
+    .theme-toggle{min-width:44px;min-height:44px;display:inline-flex;align-items:center;justify-content:center;padding:0;}
+    .tab-btn{min-height:44px;}
+    .field input,.field select,.field .title-input{min-height:44px;}
+    .btn{min-height:44px;}
+    .btn-sm,.btn-danger{min-width:44px;min-height:44px;}
+    .mode-btn,.block-mode-btn{min-height:44px;}
+    .footer a{display:inline-flex;align-items:center;min-height:44px;padding:0 4px;}
+  }
 
   /* ==================== IMPURITY PROFILE (scoped) ==================== */
 #panel-ipcal {
@@ -928,7 +957,13 @@ function toggleTheme(){const el=document.documentElement;const cur=el.getAttribu
 try{const saved=localStorage.getItem("reflux-theme");if(saved){document.documentElement.setAttribute("data-theme",saved);}}catch(e){}
 
 const TABS=["charge","solution","ymb","units","agiscale","equation","ipcal","chem"];
-function switchTab(id){document.querySelectorAll(".calc-panel").forEach(p=>p.classList.remove("active"));document.querySelectorAll(".tab-btn").forEach(b=>b.classList.remove("active"));document.getElementById("panel-"+id).classList.add("active");document.querySelectorAll(".tab-btn")[TABS.indexOf(id)].classList.add("active");document.body.classList.toggle("wide",id==="ipcal"||id==="chem");try{history.replaceState(null,"","#"+id);}catch(e){}}
+function switchTab(id){document.querySelectorAll(".calc-panel").forEach(p=>p.classList.remove("active"));document.querySelectorAll(".tab-btn").forEach(b=>b.classList.remove("active"));document.getElementById("panel-"+id).classList.add("active");var ab=document.querySelectorAll(".tab-btn")[TABS.indexOf(id)];ab.classList.add("active");document.body.classList.toggle("wide",id==="ipcal"||id==="chem");
+// The bar scrolls once eight tabs no longer fit, so a deep link to a late tab
+// left the active button off-screen with no active state anywhere in view.
+// block:"nearest" stops it yanking the page vertically on load. jsdom has no
+// layout and so no scrollIntoView, hence the guard.
+if(ab.scrollIntoView)try{ab.scrollIntoView({block:"nearest",inline:"center"});}catch(e){}
+try{history.replaceState(null,"","#"+id);}catch(e){}}
 
 // Deep links, so index.html can point at one tool: reflux.html#chem. The hash is
 // only ever honoured when it names a key in TABS, so a stale or hand-typed link

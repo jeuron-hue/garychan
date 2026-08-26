@@ -71,7 +71,16 @@
   .footer a{color:var(--text-muted);text-decoration:none;}
   .footer a:hover{color:var(--accent);}
 
-  @media(max-width:600px){.content{padding:20px 12px 28px;}.grid{grid-template-columns:1fr;}.lede h2{font-size:19px;}}
+  /* Same breakpoint stack as reflux.html: widest query first, so the narrower
+     one still wins where the two collide. */
+  @media(max-width:900px){.content{padding:24px 16px 32px;}}
+  @media(max-width:600px){.content{padding:20px 12px 28px;}.grid{grid-template-columns:1fr;}.lede h2{font-size:19px;}.header{padding:10px 12px;}.header h1{font-size:13px;}}
+  /* Touch input, keyed off the pointer rather than the width. */
+  @media(pointer:coarse){
+    .theme-toggle{min-width:44px;min-height:44px;display:inline-flex;align-items:center;justify-content:center;padding:0;}
+    .lede .open-all{min-height:44px;}
+    .footer a{display:inline-flex;align-items:center;min-height:44px;padding:0 4px;}
+  }
 </style>
 </head>
 <body>
