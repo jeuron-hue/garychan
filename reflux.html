@@ -1,0 +1,2084 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!--
+  Reflux v1 - Process Chemistry Toolbox
+  (c) Gary Chan
+
+  CHANGE HISTORY
+  v1 (2026-08) - First release under the Reflux name. Merge of two previously
+                 separate tools into one self-contained single-file toolbox:
+                   * the calculator set (Charge Amount, Solution Prep, Yield
+                     & Mass Balance, Unit Converter, Agitation Scale-up,
+                     Equation Builder)
+                   * the Impurity Profile Calculator, now the seventh tab.
+                 Changes made during the merge:
+                   - The impurity profile half: CSS rescoped from :root to #panel-ipcal so its six
+                     colliding custom properties (--accent, --accent-dim,
+                     --bg-card, --bg-input, --border, --text-muted) no longer
+                     leak into the calculator panels. All profiler selectors are
+                     prefixed with #panel-ipcal; its bare element selectors
+                     (body, h2, label, input, select, button, table) would
+                     otherwise have bled across every tab.
+                   - Single theme engine. Its own toggle and its separate
+                     separate storage key were removed; the shell header
+                     toggle now drives both halves via the data-theme
+                     attribute on the root element. Light is the default.
+                   - Accent normalised to the toolbox blue. The profiler's semantic
+                     table colours (row-blue, row-red, spec-exceed highlight,
+                     RRT group border, blank-card tint) are retained, since
+                     table readability depends on them.
+                   - Typefaces consolidated to IBM Plex Sans / IBM Plex Mono;
+                     the two faces previously used by the profiler dropped.
+                   - .content widens to 1400px while the Impurity Profile tab
+                     is active, for the wide result table.
+                   - All prior-employer strings removed: copyright line,
+                     obfuscated string array, both mailto addresses.
+                   - Invisible Unicode provenance fingerprint removed from the
+                     profiler export watermark.
+                 Calculation logic in both halves is unchanged.
+
+  PRIOR HISTORY (calculator set)
+  v1 (2025-05) - Initial release. Charge Amount, Solution Prep,
+                 Yield & Mass Balance, Unit Converter, Equation Builder.
+  v2 (2026-05) - Calculation logic refactored into pure functions.
+                 Equation Builder: explicit chaining with running scope.
+                 Pressure converter: three-field live sync.
+                 Solution Prep: Molarity sub-mode (fill 3 of 4).
+                 New tab: Agitation Scale-up Calculator.
+
+  PRIOR HISTORY (impurity profile)
+  v4 (2026)    - Agilent GC CSV supported alongside Shimadzu LabSolutions
+                 ASCII, vendor auto-detected. XLSX export rebuilt on ExcelJS.
+                 Editable sample name/ID, per-sample spec limit, reference
+                 peak dropdown, sample reordering, TSV clipboard copy.
+                 Area% denominators fixed to use positive-corrected peaks
+                 only, correcting blank Area% output under Mode 2.
+  v3           - Contrast raised, export watermark row added.
+-->
+<title>Reflux</title>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/12.4.1/math.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap');
+  :root, [data-theme="dark"] {
+    --bg-primary:#0c0e14;--bg-secondary:#141720;--bg-card:#1a1d28;--bg-input:#0e1019;
+    --border:#2a2d3a;--border-focus:#4a7cff;--text-primary:#e2e4ea;--text-secondary:#a0a3b0;
+    --text-muted:#787b8a;--accent:#4a7cff;--accent-dim:rgba(74,124,255,0.12);
+    --warning:#e05252;--warning-bg:rgba(224,82,82,0.1);--success:#4ac78b;
+    --font-body:'IBM Plex Sans',sans-serif;--font-mono:'IBM Plex Mono',monospace;
+  }
+  [data-theme="light"] {
+    --bg-primary:#f0f1f4;--bg-secondary:#ffffff;--bg-card:#ffffff;--bg-input:#f5f6f8;
+    --border:#d0d2da;--border-focus:#3a6aee;--text-primary:#1a1d28;--text-secondary:#4a4d5a;
+    --text-muted:#6a6d7a;--accent:#3a6aee;--accent-dim:rgba(58,106,238,0.08);
+    --warning:#c83030;--warning-bg:rgba(200,48,48,0.08);--success:#2a9a6a;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{font-family:var(--font-body);background:var(--bg-primary);color:var(--text-primary);font-size:14px;line-height:1.5;min-height:100vh;}
+  .header{display:flex;align-items:center;justify-content:space-between;padding:12px 24px;border-bottom:1px solid var(--border);background:var(--bg-secondary);gap:16px;}
+  .header-left{display:flex;flex-direction:column;gap:1px;}
+  .header h1{font-family:var(--font-mono);font-size:15px;font-weight:600;letter-spacing:0.5px;}
+  .header h1 span{color:var(--accent);}
+  .header-sub{font-size:10px;color:var(--text-muted);font-family:var(--font-mono);letter-spacing:0.2px;}
+  .header-right{display:flex;align-items:center;gap:12px;}
+  .theme-toggle{font-family:var(--font-mono);font-size:18px;background:none;border:none;cursor:pointer;padding:4px;color:var(--text-secondary);transition:color 0.2s;}
+  .theme-toggle:hover{color:var(--text-primary);}
+  .tab-bar{display:flex;gap:0;padding:0 24px;background:var(--bg-secondary);border-bottom:1px solid var(--border);overflow-x:auto;scrollbar-width:thin;}
+  .tab-btn{font-family:var(--font-mono);font-size:12px;font-weight:500;padding:12px 20px;background:none;border:none;color:var(--text-secondary);cursor:pointer;white-space:nowrap;border-bottom:2px solid transparent;transition:all 0.2s;}
+  .tab-btn:hover{color:var(--text-primary);background:var(--accent-dim);}
+  .tab-btn.active{color:var(--accent);border-bottom-color:var(--accent);}
+  .content{padding:24px;max-width:960px;margin:0 auto;}
+  body.wide .content{max-width:1400px;}
+  .calc-panel{display:none;}.calc-panel.active{display:block;}
+  .panel-title{font-size:18px;font-weight:600;margin-bottom:4px;}
+  .panel-desc{font-size:12px;color:var(--text-secondary);margin-bottom:20px;}
+  .card{background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:20px;margin-bottom:16px;}
+  [data-theme="light"] .card{box-shadow:0 1px 3px rgba(0,0,0,0.06);}
+  [data-theme="light"] .header{box-shadow:0 1px 3px rgba(0,0,0,0.06);}
+  .card-label{font-family:var(--font-mono);font-size:11px;font-weight:500;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:12px;}
+  .field-row{display:flex;gap:12px;align-items:flex-end;margin-bottom:10px;flex-wrap:wrap;}
+  .field{display:flex;flex-direction:column;gap:4px;flex:1;min-width:110px;}
+  .field label{font-size:11px;color:var(--text-secondary);font-weight:500;}
+  .field input,.field select{font-family:var(--font-mono);font-size:13px;padding:8px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text-primary);outline:none;transition:border-color 0.2s;}
+  .field input:focus,.field select:focus{border-color:var(--border-focus);box-shadow:0 0 0 2px var(--accent-dim);}
+  .field select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%238a8d9a' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;padding-right:28px;}
+  .field .title-input{font-family:var(--font-mono);font-size:13px;font-weight:500;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;padding:8px 10px;color:var(--text-primary);}
+  .field .title-input:focus{border-color:var(--border-focus);box-shadow:0 0 0 2px var(--accent-dim);}
+  .btn{font-family:var(--font-mono);font-size:12px;font-weight:500;padding:8px 16px;border:1px solid var(--border);border-radius:4px;cursor:pointer;transition:all 0.2s;background:var(--bg-card);color:var(--text-secondary);}
+  .btn:hover{border-color:var(--accent);color:var(--text-primary);}
+  .btn-accent{background:var(--accent);border-color:var(--accent);color:#fff;}
+  .btn-accent:hover{background:#3a6aee;}
+  .btn-sm{padding:4px 10px;font-size:11px;}
+  .btn-danger{color:var(--warning);border-color:transparent;background:none;padding:4px 8px;}
+  .btn-danger:hover{background:var(--warning-bg);}
+  .btn-row{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;}
+  .result-box{background:var(--bg-input);border:1px solid var(--border);border-radius:4px;padding:12px 16px;margin-top:8px;}
+  .result-line{display:flex;justify-content:space-between;align-items:center;padding:4px 0;}
+  .result-label{font-size:12px;color:var(--text-secondary);}
+  .result-value{font-family:var(--font-mono);font-size:14px;font-weight:600;color:var(--accent);}
+  .result-value.warning{color:var(--warning);}.result-value.success{color:var(--success);}
+  .dynamic-row{display:flex;gap:8px;align-items:flex-end;margin-bottom:8px;padding:12px;background:var(--bg-input);border-radius:4px;border:1px solid var(--border);flex-wrap:wrap;}
+  .dynamic-row .field{min-width:100px;}
+  .sep{height:1px;background:var(--border);margin:12px 0;}
+  .mode-toggle{display:inline-flex;gap:0;border:1px solid var(--border);border-radius:4px;overflow:hidden;margin-bottom:8px;}
+  .mode-btn{font-family:var(--font-mono);font-size:11px;padding:6px 14px;background:var(--bg-input);border:none;color:var(--text-secondary);cursor:pointer;transition:all 0.2s;}
+  .mode-btn.active{background:var(--accent);color:#fff;}
+  .eq-input{font-family:var(--font-mono)!important;font-size:14px!important;width:100%;}
+  .eq-step{padding:12px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;margin-bottom:8px;}
+  .fn-ref{font-family:var(--font-mono);font-size:11px;color:var(--text-muted);padding:8px 12px;background:var(--bg-input);border-radius:4px;margin-top:8px;line-height:1.8;}
+  .reagent-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;}
+  .reagent-header span{font-family:var(--font-mono);font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;}
+  .note-text{font-size:11px;color:var(--text-muted);font-style:italic;margin-top:4px;}
+  .step-card{border-left:3px solid var(--accent);}
+  .step-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;}
+  .section-label{font-family:var(--font-mono);font-size:10px;font-weight:600;color:var(--accent);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;margin-top:12px;}
+  .output-block{padding:10px;background:var(--bg-primary);border:1px solid var(--border);border-radius:4px;margin-bottom:8px;}
+  .output-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;}
+  .output-header span{font-family:var(--font-mono);font-size:10px;color:var(--text-muted);text-transform:uppercase;}
+  .product-radio{display:flex;align-items:center;gap:4px;font-size:11px;color:var(--text-muted);cursor:pointer;margin-top:4px;}
+  .product-radio input{cursor:pointer;}
+  .block-mode-bar{display:flex;gap:0;border:1px solid var(--border);border-radius:4px;overflow:hidden;margin-bottom:16px;width:fit-content;}
+  .block-mode-btn{font-family:var(--font-mono);font-size:11px;padding:7px 18px;background:var(--bg-input);border:none;color:var(--text-secondary);cursor:pointer;transition:all 0.2s;border-right:1px solid var(--border);}
+  .block-mode-btn:last-child{border-right:none;}
+  .block-mode-btn.active{background:var(--accent);color:#fff;}
+  .scope-pill{display:inline-block;font-family:var(--font-mono);font-size:10px;padding:2px 8px;background:var(--accent-dim);color:var(--accent);border-radius:3px;margin:2px 4px 2px 0;}
+  .scope-bar{margin:4px 0 8px 0;min-height:20px;}
+  .scope-bar-label{font-family:var(--font-mono);font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;}
+  .pres-sync-row{display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap;}
+  .pres-sync-row .field{min-width:140px;}
+  .pres-sync-row .field label .pres-ref{font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.3px;}
+  .agi-table{width:100%;border-collapse:collapse;font-family:var(--font-mono);font-size:12px;}
+  .agi-table th,.agi-table td{padding:6px 10px;border:1px solid var(--border);text-align:right;}
+  .agi-table th{background:var(--bg-input);color:var(--text-secondary);font-weight:500;text-align:center;font-size:11px;}
+  .agi-table td:first-child{text-align:left;color:var(--text-secondary);font-size:11px;}
+  .agi-table td.agi-val{color:var(--accent);font-weight:600;}
+  .agi-table .agi-unit{color:var(--text-muted);font-size:10px;font-weight:400;}
+  .footer{display:flex;justify-content:space-between;align-items:center;padding:12px 24px;border-top:1px solid var(--border);background:var(--bg-secondary);font-family:var(--font-mono);font-size:10px;color:var(--text-muted);}
+  .footer a{color:var(--accent);text-decoration:none;}
+  .footer a:hover{text-decoration:underline;}
+  .mc-solved{background:var(--accent-dim);border-color:var(--accent)!important;}
+  @media(max-width:600px){.content{padding:12px;}.field-row{flex-direction:column;gap:8px;}.field{min-width:100%;}.tab-bar{padding:0 8px;}.tab-btn{padding:10px 12px;font-size:11px;}.pres-sync-row{flex-direction:column;}}
+
+  /* ==================== IMPURITY PROFILE (scoped) ==================== */
+#panel-ipcal {
+      --bg: #1e1e2e;
+      --bg-card: #282840;
+      --bg-card-blank: #1e2a3a;
+      --bg-input: #2a2a42;
+      --bg-btn: #33334d;
+      --bg-btn-hover: #3d3d5c;
+      --border: #3a3a55;
+      --border-light: #4a4a65;
+      --text: #d4d4e0;
+      --text-muted: #b0b0c4;
+      --text-heading: #e8e8f0;
+      --accent: #4a7cff;
+      --accent-dim: #3a6aee;
+      --danger: #e05555;
+      --danger-dim: #a03030;
+      --row-blue: #5dade2;
+      --row-red: #e74c3c;
+      --group-border: #5a5a75;
+      --sticky-bg: #24243a;
+      --highlight: #ffd54a;
+      --highlight-text: #1a1a1a;
+      font-family: var(--font-body);
+      line-height: 1.45;
+      color: var(--text);
+    }
+[data-theme="light"] #panel-ipcal {
+      --bg: #ffffff;
+      --bg-card: #f3f4f7;
+      --bg-card-blank: #e9f1fb;
+      --bg-input: #ffffff;
+      --bg-btn: #eceef3;
+      --bg-btn-hover: #dfe3ea;
+      --border: #c2c6d2;
+      --border-light: #a8adbd;
+      --text: #14151c;
+      --text-muted: #3f4654;
+      --text-heading: #0c0e16;
+      --accent: #3a6aee;
+      --accent-dim: #3a6aee;
+      --danger: #b3261e;
+      --danger-dim: #b3261e;
+      --row-blue: #11519f;
+      --row-red: #a81d16;
+      --group-border: #8b90a0;
+      --sticky-bg: #e7eaf0;
+      --highlight: #ffd54a;
+      --highlight-text: #1a1a1a;
+    }
+#panel-ipcal table.data td.spec-exceed {
+      background: var(--highlight);
+      color: var(--highlight-text) !important;
+      font-weight: 600;
+    }
+#panel-ipcal { background: transparent; }
+#panel-ipcal h2 { font-size: 1.05rem; margin: 1.25rem 0 0.5rem; border-bottom: 1px solid var(--border); padding-bottom: 0.25rem; color: var(--text-heading); font-weight: 500; }
+#panel-ipcal p.muted { color: var(--text-muted); font-size: 0.9rem; margin: 0 0 1rem; }
+#panel-ipcal label { display: inline-block; margin-right: 0.5rem; color: var(--text); }
+#panel-ipcal input[type="number"], #panel-ipcal input[type="text"] {
+      background: var(--bg-input);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      padding: 0.2rem 0.4rem;
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+    }
+#panel-ipcal input[type="number"] { width: 4rem; }
+#panel-ipcal select {
+      background: var(--bg-input);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      padding: 0.2rem 0.4rem;
+      font-family: var(--font-body);
+      font-size: 0.85rem;
+      max-width: 100%;
+      min-width: 6rem;
+    }
+#panel-ipcal button {
+      cursor: pointer;
+      padding: 0.35rem 0.75rem;
+      margin: 0.25rem 0.25rem 0.25rem 0;
+      border: 1px solid var(--accent-dim);
+      background: var(--bg-btn);
+      color: var(--accent);
+      border-radius: 4px;
+      font-family: var(--font-body);
+      font-size: 0.85rem;
+      font-weight: 500;
+    }
+#panel-ipcal button:hover { background: var(--bg-btn-hover); border-color: var(--accent); }
+#panel-ipcal button.danger { border-color: var(--danger-dim); color: var(--danger); }
+#panel-ipcal button.danger:hover { border-color: var(--danger); background: #3a2020; }
+#panel-ipcal .sample-card {
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.75rem 1rem;
+      margin: 0.5rem 0;
+      background: var(--bg-card);
+    }
+#panel-ipcal .sample-card h3 { margin: 0 0 0.5rem; font-size: 1rem; color: var(--text-heading); font-weight: 500; }
+#panel-ipcal table.data {
+      border-collapse: collapse;
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      width: 100%;
+    }
+#panel-ipcal table.data th, #panel-ipcal table.data td {
+      border: 1px solid var(--border);
+      padding: 0.25rem 0.5rem;
+      text-align: right;
+    }
+#panel-ipcal table.data th {
+      background: var(--bg-card);
+      color: var(--accent);
+      font-weight: 500;
+    }
+#panel-ipcal table.data th:first-child, #panel-ipcal table.data td:first-child { text-align: left; }
+#panel-ipcal .scroll-x {
+      overflow-x: auto;
+      overflow-y: auto;
+      max-width: 100%;
+      max-height: 70vh;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      margin-top: 0.5rem;
+    }
+#panel-ipcal .scroll-x table { margin: 0; white-space: nowrap; }
+#panel-ipcal .scroll-x th, #panel-ipcal .scroll-x td { font-size: 0.75rem; padding: 0.2rem 0.4rem; }
+#panel-ipcal #resultTable thead th {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      background: var(--sticky-bg);
+      box-shadow: inset 0 -1px 0 var(--border-light);
+    }
+#panel-ipcal tr.rrt-group-start td {
+      border-top: 2px solid var(--group-border);
+    }
+#panel-ipcal .error { color: var(--danger); font-size: 0.9rem; margin: 0.5rem 0; }
+#panel-ipcal .warn {
+      color: var(--highlight-text);
+      background: var(--highlight);
+      font-size: 0.85rem;
+      margin: 0.5rem 0;
+      padding: 0.5rem 0.75rem;
+      border-radius: 4px;
+      line-height: 1.4;
+    }
+#panel-ipcal .step { margin-bottom: 1.5rem; }
+#panel-ipcal .control-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1.5rem;
+      align-items: center;
+      margin: 0.5rem 0;
+    }
+#panel-ipcal .control-group {
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+#panel-ipcal .ref-input {
+      width: 6rem;
+      font-family: var(--font-mono);
+    }
+#panel-ipcal .ref-error {
+      color: var(--danger);
+      font-size: 0.8rem;
+      margin-left: 0.25rem;
+    }
+#panel-ipcal .role-select {
+      margin-left: 0.5rem;
+      font-size: 0.85rem;
+    }
+#panel-ipcal .blank-card {
+      border: 1px solid #2a4a6a;
+      background: var(--bg-card-blank);
+    }
+#panel-ipcal .row-blue td { color: var(--row-blue); }
+#panel-ipcal .row-red td { color: var(--row-red); }
+#panel-ipcal .sub-section {
+      margin: 0.75rem 0;
+      padding: 0.5rem 0;
+    }
+#panel-ipcal .sub-section h4 {
+      font-size: 0.95rem;
+      margin: 0 0 0.5rem;
+      color: var(--text-heading);
+      font-weight: 500;
+    }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-left">
+    <h1 id="app-title"></h1>
+    <div class="header-sub" id="app-sub"></div>
+  </div>
+  <div class="header-right">
+    <button class="theme-toggle" onclick="toggleTheme()" title="Toggle light/dark mode">☀</button>
+  </div>
+</div>
+
+<div class="tab-bar">
+  <button class="tab-btn active" onclick="switchTab('charge')">Charge Amount</button>
+  <button class="tab-btn" onclick="switchTab('solution')">Solution Prep</button>
+  <button class="tab-btn" onclick="switchTab('ymb')">Yield & Mass Bal</button>
+  <button class="tab-btn" onclick="switchTab('units')">Unit Converter</button>
+  <button class="tab-btn" onclick="switchTab('agiscale')">Agitation Scale-up</button>
+  <button class="tab-btn" onclick="switchTab('equation')">Equation Builder</button>
+  <button class="tab-btn" onclick="switchTab('ipcal')">Impurity Profile</button>
+</div>
+
+<div class="content">
+
+  <!-- CHARGE AMOUNT -->
+  <div id="panel-charge" class="calc-panel active">
+    <div class="panel-title">Charge Amount Calculator</div>
+    <div class="panel-desc">Calculate amounts to charge based on ratio type. Supports wt/wt, mol/mol, vol/wt, wt/vol, vol/vol.</div>
+    <div class="card">
+      <div class="card-label">Basis Material</div>
+      <div class="field-row">
+        <div class="field"><label>Name</label><input type="text" id="ch-basis-name" placeholder="e.g. APD" oninput="calcCharge()"></div>
+        <div class="field"><label>Weight</label><input type="number" id="ch-basis-wt" step="any" oninput="calcCharge()"></div>
+        <div class="field" style="max-width:80px;"><label>Mass unit</label><select id="ch-mass-unit" onchange="calcCharge()"><option value="g">g</option><option value="kg">kg</option></select></div>
+        <div class="field"><label>Purity (%)</label><input type="number" id="ch-basis-pur" value="100" step="any" oninput="calcCharge()"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>MW (g/mol)</label><input type="number" id="ch-basis-mw" step="any" placeholder="for mol ratios" oninput="calcCharge()"></div>
+        <div class="field"><label>Density (g/mL)</label><input type="number" id="ch-basis-dens" step="any" placeholder="for vol ratios" oninput="calcCharge()"></div>
+        <div class="field" style="max-width:80px;"><label>Vol unit</label><select id="ch-vol-unit" onchange="calcCharge()"><option value="mL">mL</option><option value="L">L</option></select></div>
+      </div>
+    </div>
+    <div class="card"><div class="card-label">Reagents</div><div id="ch-reagents"></div><div class="btn-row"><button class="btn" onclick="addChReagent()">+ Add Reagent</button></div></div>
+    <div class="card"><div class="card-label">Results</div><div id="ch-results" class="result-box"><div style="color:var(--text-muted);font-size:12px;">Enter basis material and at least one reagent.</div></div></div>
+    <div class="btn-row"><button class="btn btn-accent" onclick="exportCharge()">Export to Excel</button></div>
+  </div>
+
+  <!-- SOLUTION PREP -->
+  <div id="panel-solution" class="calc-panel">
+    <div class="panel-title">Solution Prep Calculator</div>
+    <div class="panel-desc">Prepare solutions from solid, dilute from stock, or solve molarity equations.</div>
+    <div class="mode-toggle">
+      <button class="mode-btn active" onclick="setSolMode('solid',this)">From Solid</button>
+      <button class="mode-btn" onclick="setSolMode('dilution',this)">Dilution</button>
+      <button class="mode-btn" onclick="setSolMode('molarity',this)">Molarity</button>
+    </div>
+    <div id="sol-solid" class="card">
+      <div class="card-label">Prepare from Solid</div>
+      <div class="field-row">
+        <div class="field"><label>Target Concentration</label><input type="number" id="sol-conc" step="any" oninput="calcSolution()"></div>
+        <div class="field"><label>Concentration Unit</label><select id="sol-conc-unit" onchange="calcSolution()"><option value="g/L">g/L</option><option value="mol/L">mol/L</option><option value="wt%">wt%</option></select></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Target Volume (mL)</label><input type="number" id="sol-vol" step="any" oninput="calcSolution()"></div>
+        <div class="field"><label>Solute MW (g/mol)</label><input type="number" id="sol-mw" step="any" oninput="calcSolution()"></div>
+        <div class="field"><label>Solute Purity (%)</label><input type="number" id="sol-purity" value="100" step="any" oninput="calcSolution()"></div>
+      </div>
+      <div class="field-row"><div class="field"><label>Solvent Density (g/mL) — for wt% only</label><input type="number" id="sol-density" value="1.0" step="any" oninput="calcSolution()"></div></div>
+    </div>
+    <div id="sol-dilution" class="card" style="display:none;">
+      <div class="card-label">Dilution from Stock</div>
+      <div class="field-row">
+        <div class="field"><label>Stock Concentration</label><input type="number" id="sol-stock-conc" step="any" oninput="calcSolution()"></div>
+        <div class="field"><label>Target Concentration</label><input type="number" id="sol-target-conc" step="any" oninput="calcSolution()"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Concentration Unit</label><select id="sol-dil-unit" onchange="calcSolution()"><option value="g/L">g/L</option><option value="mol/L">mol/L</option><option value="wt%">wt%</option></select></div>
+        <div class="field"><label>Target Volume (mL)</label><input type="number" id="sol-target-vol" step="any" oninput="calcSolution()"></div>
+      </div>
+    </div>
+    <div id="sol-molarity" class="card" style="display:none;">
+      <div class="card-label">Molarity Calculator</div>
+      <div class="panel-desc" style="margin-bottom:12px;"><code style="font-size:12px;">mass (g) = concentration (mol/L) &times; volume (L) &times; MW (g/mol)</code><br>Fill any 3 fields. Leave 1 blank to solve.</div>
+      <div class="field-row">
+        <div class="field"><label>Mass (g)</label><input type="text" id="mc-mass" placeholder="Leave blank to solve"></div>
+        <div class="field"><label>Concentration (mol/L)</label><input type="text" id="mc-conc" placeholder="Leave blank to solve"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Volume (L)</label><input type="text" id="mc-vol" placeholder="Leave blank to solve"></div>
+        <div class="field"><label>Molecular Weight (g/mol)</label><input type="text" id="mc-mw" placeholder="Leave blank to solve"></div>
+      </div>
+      <div class="btn-row"><button class="btn" onclick="molCalcSolve()">Calculate</button><button class="btn" onclick="molCalcReset()">Clear</button></div>
+    </div>
+    <div class="card"><div class="card-label">Result</div><div id="sol-results" class="result-box"><div style="color:var(--text-muted);font-size:12px;">Enter values above.</div></div></div>
+    <div class="btn-row"><button class="btn btn-accent" onclick="exportSolution()">Export to Excel</button></div>
+  </div>
+
+  <!-- YIELD & MASS BALANCE -->
+  <div id="panel-ymb" class="calc-panel">
+    <div class="panel-title">Yield & Mass Balance</div>
+    <div class="panel-desc">Select mode per block. Yield for molar yield, Mass Balance for tracking splits, Mixed for both.</div>
+    <div class="field-row" style="margin-bottom:16px;">
+      <div class="field" style="max-width:100px;"><label>Mass unit</label><select id="ymb-mass-unit" onchange="renderYmb()"><option value="g">g</option><option value="kg">kg</option></select></div>
+      <div class="field" style="max-width:100px;"><label>Vol unit</label><select id="ymb-vol-unit" onchange="renderYmb()"><option value="mL">mL</option><option value="L">L</option></select></div>
+    </div>
+    <div id="ymb-steps"></div>
+    <div class="btn-row">
+      <button class="btn" onclick="addYmbStep()">+ Add Block</button>
+      <button class="btn btn-accent" onclick="exportYmb()">Export to Excel</button>
+    </div>
+    <div class="card" style="margin-top:16px;"><div class="card-label">Summary</div><div id="ymb-summary" class="result-box"><div style="color:var(--text-muted);font-size:12px;">Add at least one block.</div></div></div>
+  </div>
+
+  <!-- UNIT CONVERTER -->
+  <div id="panel-units" class="calc-panel">
+    <div class="panel-title">Unit Converter</div>
+    <div class="panel-desc">Convert between common chemistry and engineering units.</div>
+    <div class="card">
+      <div class="field-row"><div class="field"><label>Category</label><select id="unit-cat" onchange="updateUnitOptions()"><option value="mass">Mass</option><option value="volume">Volume</option><option value="temperature">Temperature</option><option value="pressure">Pressure</option><option value="concentration">Concentration</option><option value="length">Length</option></select></div></div>
+      <div id="unit-standard-fields">
+        <div class="field-row">
+          <div class="field"><label>Value</label><input type="number" id="unit-value" step="any" oninput="calcUnits()"></div>
+          <div class="field"><label>From</label><select id="unit-from" onchange="calcUnits()"></select></div>
+          <div class="field"><label>To</label><select id="unit-to" onchange="calcUnits()"></select></div>
+        </div>
+        <div id="unit-mw-row" class="field-row" style="display:none;"><div class="field"><label>MW (g/mol) — needed for mol conversions</label><input type="number" id="unit-mw" step="any" oninput="calcUnits()"></div></div>
+      </div>
+      <div id="unit-pres-sync" style="display:none;">
+        <div class="panel-desc" style="margin-bottom:12px;">Type in any field, the other two update. Production units (kgf/cm²) are gauge. Lab units (mmHg, hPa) are absolute.</div>
+        <div class="pres-sync-row">
+          <div class="field"><label>kgf/cm² <span class="pres-ref">(gauge)</span></label><input type="number" id="pres-kgf" step="any" oninput="syncPressure('kgf')"></div>
+          <div class="field"><label>mmHg <span class="pres-ref">(absolute)</span></label><input type="number" id="pres-mmhg" step="any" oninput="syncPressure('mmhg')"></div>
+          <div class="field"><label>hPa <span class="pres-ref">(absolute)</span></label><input type="number" id="pres-hpa" step="any" oninput="syncPressure('hpa')"></div>
+        </div>
+      </div>
+    </div>
+    <div class="card"><div class="card-label">Result</div><div id="unit-results" class="result-box"><div style="color:var(--text-muted);font-size:12px;">Select units and enter a value.</div></div></div>
+    <div class="btn-row"><button class="btn btn-accent" onclick="exportUnits()">Export to Excel</button></div>
+  </div>
+
+  <!-- AGITATION SCALE-UP -->
+  <div id="panel-agiscale" class="calc-panel">
+    <div class="panel-title">Agitation Scale-up Calculator</div>
+    <div class="panel-desc">Geometric scale-up of agitated vessels. Adapted from CheCalc methodology.</div>
+    <div class="card">
+      <div class="card-label">Small Scale Reactor</div>
+      <div class="field-row">
+        <div class="field"><label>Reactor Diameter (mm)</label><input type="number" id="agi-T1" value="300" step="any" oninput="calcAgi()"></div>
+        <div class="field"><label>Liquid Level (mm)</label><input type="number" id="agi-Z1" value="300" step="any" oninput="calcAgi()"></div>
+        <div class="field"><label>Shaft Speed (rpm)</label><input type="number" id="agi-N1" value="720" step="any" oninput="calcAgi()"></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-label">Agitator Configuration</div>
+      <div class="field-row">
+        <div class="field"><label>Agitator Type</label><select id="agi-type" onchange="calcAgi()">
+          <option value="0">Narrow Hydrofoil</option><option value="1">Wide Hydrofoil</option>
+          <option value="2" selected>Pitched Blade</option><option value="3">Rushton 6-Blade</option>
+          <option value="4">180° Concave</option><option value="5">User Defined</option>
+        </select></div>
+        <div class="field"><label>D/T Ratio</label><select id="agi-dt" onchange="calcAgi()">
+          <option value="0">0.25</option><option value="1">0.30</option>
+          <option value="2" selected>0.40</option><option value="3">0.50</option>
+        </select></div>
+      </div>
+      <div id="agi-user-fields" class="field-row" style="display:none;">
+        <div class="field"><label>Flow Number (Nq)</label><input type="number" id="agi-Nq" value="0.53" step="any" oninput="calcAgi()"></div>
+        <div class="field"><label>Power Number (Np)</label><input type="number" id="agi-Np" value="0.29" step="any" oninput="calcAgi()"></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-label">Fluid Properties & Scale-up</div>
+      <div class="field-row">
+        <div class="field"><label>Density (kg/m³)</label><input type="number" id="agi-den" value="1000" step="any" oninput="calcAgi()"></div>
+        <div class="field"><label>Viscosity (cP)</label><input type="number" id="agi-visc" value="1" step="any" oninput="calcAgi()"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Scale-up Factor (V2/V1)</label><input type="number" id="agi-sup" value="1000" step="any" oninput="calcAgi()"></div>
+        <div class="field"><label>Scale-up Criterion</label><select id="agi-crit" onchange="calcAgi()">
+          <option value="1">Equal Reynolds No.</option><option value="2">Equal Tip Speed</option>
+          <option value="3" selected>Equal Power/Volume</option><option value="4">Equal Froude No.</option>
+          <option value="5">Equal Shaft Speed</option>
+        </select></div>
+      </div>
+    </div>
+    <div class="card"><div class="card-label">Results</div><div id="agi-results"><div style="color:var(--text-muted);font-size:12px;">Enter values above.</div></div></div>
+    <div class="btn-row"><button class="btn btn-accent" onclick="exportAgi()">Export to Excel</button></div>
+  </div>
+
+  <!-- EQUATION BUILDER -->
+  <div id="panel-equation" class="calc-panel">
+    <div class="panel-title">Equation Builder</div>
+    <div class="panel-desc">Define variables and equations. Results chain forward: each equation's result becomes available in subsequent equations.</div>
+    <div class="card"><div class="card-label">Variables</div><div id="eq-variables"></div><div class="btn-row"><button class="btn" onclick="addEqVariable()">+ Add Variable</button></div></div>
+    <div class="card"><div class="card-label">Equations</div><div id="eq-equations"></div><div class="btn-row"><button class="btn" onclick="addEqEquation()">+ Add Equation</button><button class="btn" onclick="evalEquations()">Evaluate</button></div></div>
+    <div class="card"><div class="card-label">Results</div><div id="eq-results" class="result-box"><div style="color:var(--text-muted);font-size:12px;">Define variables and equations, then click Evaluate.</div></div></div>
+    <div class="card" style="margin-top:0;"><div class="card-label">Available Functions</div><div class="fn-ref">sqrt(x) &nbsp; abs(x) &nbsp; log(x) <small>[base 10]</small> &nbsp; ln(x) <small>[natural]</small> &nbsp; exp(x) &nbsp; round(x, n) &nbsp; min(a,b) &nbsp; max(a,b) &nbsp; pow(x,n) &nbsp; pi &nbsp; e</div></div>
+    <div class="btn-row"><button class="btn btn-accent" onclick="exportEquation()">Export to Excel</button></div>
+  </div>
+
+  <!-- IMPURITY PROFILE -->
+  <div class="calc-panel" id="panel-ipcal">
+    <div class="panel-title">Impurity Profile Calculator</div>
+    <div class="panel-desc">LC/GC peak table parser. Shimadzu LabSolutions ASCII and Agilent GC CSV, vendor auto-detected. Reference-peak RRT grouping, optional blank subtraction, per-sample spec flagging, CSV/TSV/XLSX export.</div>
+
+
+  <div class="step" id="step1">
+    <h2>Step 1: Upload files</h2>
+    <input type="file" id="fileInput" accept=".txt,.asc,.csv,text/plain" multiple style="display:none" />
+    <button type="button" id="chooseFilesBtn">Choose files</button>
+    <span id="fileCount" class="muted" style="margin-left:0.5rem;">No files loaded</span>
+    <div>
+      <button type="button" id="clearAll" class="danger">Clear all files</button>
+    </div>
+    <div id="filesContainer"></div>
+    <p id="parseError" class="error" hidden></p>
+  </div>
+
+  <div class="step" id="step2">
+    <h2>Step 2: Reference peak per sample</h2>
+    <p class="muted">Enter the exact RT value from the peak table. Default is the peak with the largest area.</p>
+    <div id="refContainer"></div>
+  </div>
+
+  <div class="step" id="step3">
+    <h2>Step 3: Blank subtraction</h2>
+    <div class="control-row">
+      <div class="control-group">
+        <label for="subMode">Mode:</label>
+        <select id="subMode">
+          <option value="none">No subtraction</option>
+          <option value="mode1">Mode 1: RT matching</option>
+          <option value="mode2">Mode 2: RRT matching</option>
+        </select>
+      </div>
+    </div>
+    <div id="subSettingsContainer"></div>
+  </div>
+
+  <div class="step" id="step4">
+    <h2>Step 4: Display settings</h2>
+    <div class="control-row">
+      <div class="control-group">
+        <label for="groupDp">RRT Group rounding:</label>
+        <select id="groupDp">
+          <option value="1">1 dp</option>
+          <option value="2" selected>2 dp</option>
+          <option value="3">3 dp</option>
+        </select>
+      </div>
+      <div class="control-group">
+        <label for="rrtDp">RRT display dp:</label>
+        <input type="number" id="rrtDp" min="1" max="10" value="4" />
+      </div>
+      <div class="control-group">
+        <label for="areaPctDp">Area% display dp:</label>
+        <input type="number" id="areaPctDp" min="0" max="10" value="3" />
+      </div>
+      <div class="control-group">
+        <label for="areaPctMode">Area% metric:</label>
+        <select id="areaPctMode">
+          <option value="both">Both (Total &amp; vs Ref)</option>
+          <option value="total">Area% Total only</option>
+          <option value="ref">Area% vs Ref only</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <div class="step" id="step5">
+    <h2>Step 5: Calculate</h2>
+    <button type="button" id="runBtn">Run calculation</button>
+    <p id="runError" class="error" hidden></p>
+  </div>
+
+  <div class="step" id="resultsSection" hidden>
+    <h2>Results</h2>
+    <p class="muted">Grouped by rounded RRT. Blue = blank-adjusted. Red = blank-adjusted, negative/zero area.</p>
+    <p id="refWarn" class="warn" hidden></p>
+    <div class="scroll-x">
+      <table class="data" id="resultTable"></table>
+    </div>
+    <div style="margin-top:0.5rem;">
+      <button type="button" id="exportCsv">Export CSV</button>
+      <button type="button" id="exportTsv">Export TSV</button>
+      <button type="button" id="exportXlsx">Export XLSX</button>
+      <button type="button" id="copyTsv">Copy table (TSV)</button>
+      <span id="copyStatus" class="muted" style="margin-left:0.5rem;"></span>
+    </div>
+  </div>
+
+      <p class="muted" style="margin-top:1.5rem;font-size:0.8rem;">
+      <a id="bugReport" href="#" style="color:var(--accent);font-weight:500;">Report an Impurity Profile bug</a>
+      <span> (attach your input file(s) and the exported output file so the issue can be reproduced)</span>
+    </p>
+  </div>
+
+</div><!-- end .content -->
+
+<div class="footer">
+  <span id="footer-copy"></span>
+  <a id="footer-bug" href="#">Report Bug</a>
+</div>
+
+<script>
+const APP_NAME="Reflux", APP_SUB="Process Chemistry Toolbox", APP_VER="v1";
+const CONTACT="jeuron@gmail.com";
+document.getElementById("app-title").innerHTML='Re<span>flux</span> \u2014 '+APP_SUB+' '+APP_VER;
+document.getElementById("app-sub").textContent="\u00a9 Gary Chan";
+document.getElementById("footer-copy").textContent="\u00a9 Gary Chan";
+document.getElementById("footer-bug").href="mailto:"+CONTACT+"?subject="+encodeURIComponent("Reflux Bug Report")+"&body="+encodeURIComponent("\u26a0 IMPORTANT: Please attach screenshot(s) showing your inputs AND the incorrect result.\nBug reports without screenshots cannot be investigated.\n\nWhich tab:\n\nWhat you entered (values and settings):\n\nWhat you expected:\n\nWhat happened instead:\n\n"+APP_NAME+" version: "+APP_VER);
+
+function toggleTheme(){const el=document.documentElement;const cur=el.getAttribute("data-theme")||"light";const next=cur==="dark"?"light":"dark";el.setAttribute("data-theme",next);document.querySelector(".theme-toggle").textContent=next==="dark"?"\u2600":"\u263e";try{localStorage.setItem("reflux-theme",next);}catch(e){}}
+try{const saved=localStorage.getItem("reflux-theme");if(saved){document.documentElement.setAttribute("data-theme",saved);}}catch(e){}
+
+const TABS=["charge","solution","ymb","units","agiscale","equation","ipcal"];
+function switchTab(id){document.querySelectorAll(".calc-panel").forEach(p=>p.classList.remove("active"));document.querySelectorAll(".tab-btn").forEach(b=>b.classList.remove("active"));document.getElementById("panel-"+id).classList.add("active");document.querySelectorAll(".tab-btn")[TABS.indexOf(id)].classList.add("active");document.body.classList.toggle("wide",id==="ipcal");}
+
+function v(id){return parseFloat(document.getElementById(id).value);}
+function sv(id){return document.getElementById(id).value;}
+function fmt(n,dp=4){if(n===null||n===undefined||isNaN(n)||!isFinite(n))return"\u2014";if(Math.abs(n)>=1e6||(Math.abs(n)<0.001&&n!==0))return n.toExponential(dp);return parseFloat(n.toFixed(dp)).toString();}
+function ts(){const d=new Date(),p=n=>String(n).padStart(2,"0");return d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())+"_"+p(d.getHours())+p(d.getMinutes());}
+function downloadXlsx(wb,name){XLSX.writeFile(wb,name+"_"+ts()+".xlsx");}
+
+// ===== PURE CALCULATION FUNCTIONS (refactored) =====
+// These functions take numbers in, return numbers out. No DOM access.
+
+function calcChargeAmountPure(basisNetG,basisMol,basisVolML,ratioType,ratio,reagentPurity,reagentMW,reagentDensity){
+  let netG=null,volML=null,mol=null,err=null;
+  switch(ratioType){
+    case'wt/wt':netG=basisNetG*ratio;break;
+    case'mol/mol':if(basisMol===null){err='Basis MW required';break;}if(!reagentMW||reagentMW<=0){err='Reagent MW required';break;}mol=basisMol*ratio;netG=mol*reagentMW;break;
+    case'vol/wt':volML=basisNetG*ratio;if(reagentDensity>0)netG=volML*reagentDensity;break;
+    case'wt/vol':if(basisVolML===null){err='Basis density required';break;}netG=basisVolML*ratio;break;
+    case'vol/vol':if(basisVolML===null){err='Basis density required';break;}volML=basisVolML*ratio;if(reagentDensity>0)netG=volML*reagentDensity;break;
+  }
+  const grossG=netG!==null?(netG/(reagentPurity/100)):null;
+  return{netG,volML,mol,grossG,err};
+}
+
+function calcSolutionSolidPure(conc,volML,mw,purity,unit,solventDensity){
+  const vL=volML/1000;let netMassG,explanation;
+  if(unit==='g/L'){netMassG=conc*vL;explanation=fmt(conc)+' g/L x '+fmt(vL)+' L = '+fmt(netMassG)+' g';}
+  else if(unit==='mol/L'){if(!mw||mw<=0)return{err:'MW required for mol/L.'};netMassG=conc*vL*mw;explanation=fmt(conc)+' mol/L x '+fmt(vL)+' L x '+fmt(mw)+' g/mol = '+fmt(netMassG)+' g';}
+  else{const sm=volML*solventDensity;netMassG=sm*conc/100;explanation=fmt(volML)+' mL x '+fmt(solventDensity)+' g/mL x '+fmt(conc)+'% = '+fmt(netMassG)+' g';}
+  const grossG=netMassG/(purity/100);
+  return{netMassG,grossG,explanation,err:null};
+}
+
+function calcDilutionPure(stockConc,targetConc,targetVol){
+  if(targetConc>=stockConc)return{err:'Target must be less than stock.'};
+  const stockVol=targetConc*targetVol/stockConc;
+  const diluentVol=targetVol-stockVol;
+  return{stockVol,diluentVol,err:null};
+}
+
+function calcMolarityPure(mass,conc,vol,mw){
+  // mass=conc*vol*mw. Returns {solvedIndex, result, label, unit, err}
+  const vals=[mass,conc,vol,mw];
+  const labels=['Mass','Concentration','Volume','Molecular Weight'];
+  const units=['g','mol/L','L','g/mol'];
+  const blanks=[],filled=[];
+  let hasErr=false;
+  for(let i=0;i<4;i++){if(vals[i]===null||vals[i]===undefined||isNaN(vals[i])){blanks.push(i);}else if(vals[i]<=0){hasErr=true;}else{filled.push(i);}}
+  if(hasErr)return{err:'All values must be positive numbers.'};
+  if(blanks.length===0){const expected=conc*vol*mw;const relErr=Math.abs(mass-expected)/Math.max(mass,expected);return relErr<0.001?{consistent:true,err:null}:{inconsistent:true,expected,err:null};}
+  if(blanks.length>1)return{err:'Fill exactly 3 of the 4 fields. '+blanks.length+' are currently blank.'};
+  const si=blanks[0];let result;
+  switch(si){case 0:result=conc*vol*mw;break;case 1:result=mass/(vol*mw);break;case 2:result=mass/(conc*mw);break;case 3:result=mass/(conc*vol);break;}
+  return{solvedIndex:si,result,label:labels[si],unit:units[si],err:null};
+}
+
+function calcPressureSyncPure(source,value){
+  // Conversion constants
+  const ATM_HPA=1013.25;const KGF_HPA=980.665;const MMHG_HPA=1.33322;
+  let hpaAbs;
+  if(source==='kgf'){hpaAbs=ATM_HPA+value*KGF_HPA;}// gauge to abs
+  else if(source==='mmhg'){hpaAbs=value*MMHG_HPA;}// abs
+  else{hpaAbs=value;}// hpa abs
+  const kgfGauge=(hpaAbs-ATM_HPA)/KGF_HPA;
+  const mmhgAbs=hpaAbs/MMHG_HPA;
+  return{kgf:kgfGauge,mmhg:mmhgAbs,hpa:hpaAbs};
+}
+
+function getNetG(mode,vals,toG,toML){
+  switch(mode){
+    case'net':{const n=parseFloat(vals.net);return isNaN(n)?null:n*toG;}
+    case'masscont':{const m=parseFloat(vals.mass),c=parseFloat(vals.cont);return(isNaN(m)||isNaN(c))?null:m*toG*c/100;}
+    case'voldenscont':{const vl=parseFloat(vals.vol),d=parseFloat(vals.dens),c=parseFloat(vals.cont);return(isNaN(vl)||isNaN(d)||isNaN(c))?null:vl*toML*d*c/100;}
+  }return null;
+}
+
+// ===== AGITATION SCALE-UP PURE FUNCTIONS =====
+const AGI_DT_VALS=[0.25,0.3,0.4,0.5];
+const AGI_RE_BREAKS=[100,200,300,500,800,1200,3000,10000];
+const AGI_PUMP_NUM=[
+  [[0.33,0.44,0.45,0.7,0.68],[0.34,0.54,0.55,0.72,0.7],[0.36,0.58,0.6,0.72,0.7],[0.38,0.64,0.66,0.72,0.7],[0.43,0.67,0.7,0.72,0.7],[0.45,0.71,0.74,0.72,0.7],[0.51,0.77,0.82,0.72,0.7],[0.57,0.8,0.88,0.72,0.7]],
+  [[0.31,0.41,0.42,0.7,0.68],[0.33,0.48,0.5,0.72,0.7],[0.35,0.51,0.54,0.72,0.7],[0.36,0.57,0.61,0.72,0.7],[0.42,0.6,0.65,0.72,0.7],[0.44,0.62,0.67,0.72,0.7],[0.47,0.69,0.75,0.72,0.7],[0.55,0.73,0.8,0.72,0.7]],
+  [[0.3,0.36,0.37,0.7,0.68],[0.32,0.43,0.45,0.72,0.7],[0.34,0.45,0.48,0.72,0.7],[0.36,0.51,0.54,0.72,0.7],[0.41,0.54,0.57,0.72,0.7],[0.43,0.57,0.6,0.72,0.7],[0.45,0.62,0.66,0.72,0.7],[0.53,0.63,0.68,0.72,0.7]],
+  [[0.3,0.35,0.36,0.7,0.68],[0.32,0.4,0.41,0.72,0.7],[0.34,0.43,0.44,0.72,0.7],[0.35,0.46,0.47,0.72,0.7],[0.39,0.48,0.5,0.72,0.7],[0.41,0.5,0.52,0.72,0.7],[0.44,0.55,0.57,0.72,0.7],[0.51,0.56,0.6,0.72,0.7]]
+];
+const AGI_POW_NUM=[
+  [[0.73,2.28,2.14,5.5,3.6],[0.53,1.78,1.75,5.5,3.2],[0.47,1.56,1.6,5.5,3.2],[0.41,1.3,1.46,5.5,3.2],[0.38,1.14,1.38,5.5,3.2],[0.36,1.09,1.37,5.5,3.2],[0.33,1.06,1.37,5.5,3.2],[0.33,1.06,1.37,5.5,3.2]],
+  [[0.71,2.24,2.14,5.5,3.6],[0.52,1.75,1.75,5.5,3.2],[0.45,1.53,1.6,5.5,3.2],[0.39,1.29,1.46,5.5,3.2],[0.37,1.12,1.38,5.5,3.2],[0.34,1.08,1.37,5.5,3.2],[0.32,1.05,1.37,5.5,3.2],[0.32,1.05,1.37,5.5,3.2]],
+  [[0.69,2.15,2.14,5.5,3.6],[0.49,1.69,1.75,5.5,3.2],[0.42,1.48,1.6,5.5,3.2],[0.37,1.24,1.46,5.5,3.2],[0.34,1.09,1.38,5.5,3.2],[0.32,1.05,1.37,5.5,3.2],[0.3,1.0,1.37,5.5,3.2],[0.29,1.0,1.37,5.5,3.2]],
+  [[0.68,2.11,2.14,5.5,3.6],[0.46,1.65,1.72,5.4,3.15],[0.4,1.45,1.6,5.5,3.2],[0.35,1.23,1.46,5.5,3.2],[0.32,1.08,1.38,5.5,3.2],[0.3,1.03,1.37,5.5,3.2],[0.28,0.98,1.37,5.5,3.2],[0.27,0.98,1.37,5.5,3.2]]
+];
+
+function agiInterp(table,dtID,agiID,Re){
+  if(Re<=AGI_RE_BREAKS[0])return table[dtID][0][agiID];
+  if(Re>=AGI_RE_BREAKS[7])return table[dtID][7][agiID];
+  let lo=0,hi=1;
+  for(let i=1;i<AGI_RE_BREAKS.length;i++){if(Re<=AGI_RE_BREAKS[i]){lo=i-1;hi=i;break;}}
+  const vLo=table[dtID][lo][agiID],vHi=table[dtID][hi][agiID];
+  return vLo+((vHi-vLo)*(Re-AGI_RE_BREAKS[lo]))/(AGI_RE_BREAKS[hi]-AGI_RE_BREAKS[lo]);
+}
+
+function calcAgiPure(T1,Z1,N1,agiID,dtID,critID,den,visc,sUp,userNq,userNp){
+  const R=Math.pow(sUp,1/3);
+  let n;
+  switch(critID){case 1:n=2;break;case 2:n=1;break;case 3:n=2/3;break;case 4:n=0.5;break;case 5:n=0;break;default:n=2/3;}
+  const nLabels={1:'2',2:'1',3:'2/3',4:'1/2',5:'0'};
+  const T2=T1*R,Z2=Z1*R;
+  const D1=AGI_DT_VALS[dtID]*T1,D2=D1*R;
+  const N2=N1*Math.pow(1/R,n);
+  const V1=Math.PI*T1*T1*Z1/4e9,V2=Math.PI*T2*T2*Z2/4e9;
+  const Teq1=1000*Math.pow(4*V1/Math.PI,1/3),Teq2=1000*Math.pow(4*V2/Math.PI,1/3);
+  const Re1=(D1/1000)**2*(N1/60)*den/(visc*0.001),Re2=(D2/1000)**2*(N2/60)*den/(visc*0.001);
+  const ts1=Math.PI*(D1/1000)*N1/60,ts2=Math.PI*(D2/1000)*N2/60;
+  let Nq1,Nq2,Np1,Np2;
+  if(agiID!==5){Nq1=agiInterp(AGI_PUMP_NUM,dtID,agiID,Re1);Nq2=agiInterp(AGI_PUMP_NUM,dtID,agiID,Re2);Np1=agiInterp(AGI_POW_NUM,dtID,agiID,Re1);Np2=agiInterp(AGI_POW_NUM,dtID,agiID,Re2);}
+  else{Nq1=Nq2=userNq;Np1=Np2=userNp;}
+  const Q1=Nq1*(N1/60)*Math.pow(D1/1000,3),Q2=Nq2*(N2/60)*Math.pow(D2/1000,3);
+  const P1=Np1*Math.pow(N1/60,3)*den*Math.pow(D1/1000,5)/1000,P2=Np2*Math.pow(N2/60,3)*den*Math.pow(D2/1000,5)/1000;
+  const PV1=P1/V1,PV2=P2/V2;
+  const Fr1=Math.pow(N1/60,2)*(D1/1000)/9.81,Fr2=Math.pow(N2/60,2)*(D2/1000)/9.81;
+  const Vc1=4*Q1/(Math.PI*(Teq1/1000)**2),Vc2=4*Q2/(Math.PI*(Teq2/1000)**2);
+  const SoA1=(Vc1/0.3048*60)/6,SoA2=(Vc2/0.3048*60)/6;
+  return{R,nLabel:nLabels[critID]||'2/3',
+    small:{V:V1,T:T1,Z:Z1,D:D1,Teq:Teq1,N:N1,Re:Re1,tipSpeed:ts1,Nq:Nq1,Q:Q1,Np:Np1,P:P1,PV:PV1,Fr:Fr1,Vc:Vc1,SoA:SoA1},
+    large:{V:V2,T:T2,Z:Z2,D:D2,Teq:Teq2,N:N2,Re:Re2,tipSpeed:ts2,Nq:Nq2,Q:Q2,Np:Np2,P:P2,PV:PV2,Fr:Fr2,Vc:Vc2,SoA:SoA2}};
+}
+
+
+// ========== CHARGE AMOUNT (UI) ==========
+let chReagents=[];
+function addChReagent(){chReagents.push({id:Date.now(),name:'',ratioType:'wt/wt',ratio:'',purity:100,mw:'',density:''});renderChReagents();}
+function removeChReagent(id){chReagents=chReagents.filter(r=>r.id!==id);renderChReagents();calcCharge();}
+function updCR(id,key,val){const r=chReagents.find(x=>x.id===id);if(r)r[key]=val;if(key==='ratioType')renderChReagents();calcCharge();}
+function renderChReagents(){
+  document.getElementById('ch-reagents').innerHTML=chReagents.map((r,i)=>{
+    const needsMW=r.ratioType==='mol/mol',needsDens=['vol/wt','wt/vol','vol/vol'].includes(r.ratioType);
+    let opt='';
+    if(needsMW)opt+='<div class="field"><label>Reagent MW (g/mol)</label><input type="number" step="any" value="'+(r.mw||'')+'" oninput="updCR('+r.id+',\'mw\',this.value)"></div>';
+    if(needsDens)opt+='<div class="field"><label>Reagent Density (g/mL)</label><input type="number" step="any" value="'+(r.density||'')+'" oninput="updCR('+r.id+',\'density\',this.value)"></div>';
+    if(!needsDens)opt+='<div class="field"><label>Reagent Density (g/mL, optional)</label><input type="number" step="any" value="'+(r.density||'')+'" oninput="updCR('+r.id+',\'density\',this.value)"></div>';
+    return'<div class="dynamic-row" style="flex-direction:column;align-items:stretch;"><div class="reagent-header"><span>Reagent '+(i+1)+'</span><button class="btn btn-danger" onclick="removeChReagent('+r.id+')">✕</button></div><div class="field-row" style="margin-bottom:4px;"><div class="field"><label>Name</label><input type="text" value="'+r.name+'" onchange="updCR('+r.id+',\'name\',this.value)"></div><div class="field"><label>Ratio Type</label><select onchange="updCR('+r.id+',\'ratioType\',this.value)"><option value="wt/wt"'+(r.ratioType==='wt/wt'?' selected':'')+'>wt/wt</option><option value="mol/mol"'+(r.ratioType==='mol/mol'?' selected':'')+'>mol/mol</option><option value="vol/wt"'+(r.ratioType==='vol/wt'?' selected':'')+'>vol/wt</option><option value="wt/vol"'+(r.ratioType==='wt/vol'?' selected':'')+'>wt/vol</option><option value="vol/vol"'+(r.ratioType==='vol/vol'?' selected':'')+'>vol/vol</option></select></div><div class="field"><label>Target ratio</label><input type="number" step="any" value="'+(r.ratio||'')+'" oninput="updCR('+r.id+',\'ratio\',this.value)"></div><div class="field"><label>Purity (%)</label><input type="number" step="any" value="'+r.purity+'" oninput="updCR('+r.id+',\'purity\',this.value)"></div></div><div class="field-row" style="margin-bottom:0;">'+opt+'</div></div>';
+  }).join('');
+}
+function calcCharge(){
+  const bw=v('ch-basis-wt'),bp=v('ch-basis-pur')||100,bMW=v('ch-basis-mw'),bDens=v('ch-basis-dens'),mu=sv('ch-mass-unit'),vu=sv('ch-vol-unit'),box=document.getElementById('ch-results');
+  if(isNaN(bw)||bw<=0||chReagents.length===0){box.innerHTML='<div style="color:var(--text-muted);font-size:12px;">Enter basis material and at least one reagent.</div>';return;}
+  const toG=mu==='kg'?1000:1,vDF=vu==='L'?0.001:1,mDF=1/toG,bNetWt=bw*bp/100,bNetG=bNetWt*toG,bWtG=bw*toG;
+  const bMol=(!isNaN(bMW)&&bMW>0)?bNetG/bMW:null,bVolML=(!isNaN(bDens)&&bDens>0)?bNetG/bDens:null;
+  let h='<div class="result-line"><span class="result-label">Basis net wt</span><span class="result-value">'+fmt(bNetWt)+' '+mu+'</span></div>';
+  if(bMol!==null)h+='<div class="result-line"><span class="result-label">Basis moles</span><span class="result-value">'+fmt(bMol)+' mol</span></div>';
+  if(bVolML!==null)h+='<div class="result-line"><span class="result-label">Basis net vol</span><span class="result-value">'+fmt(bVolML*vDF)+' '+vu+'</span></div>';
+  h+='<div class="sep"></div>';
+  chReagents.forEach(r=>{
+    const ratio=parseFloat(r.ratio),pur=parseFloat(r.purity)||100,rMW=parseFloat(r.mw),rDens=parseFloat(r.density),name=r.name||'Reagent';
+    if(isNaN(ratio)){h+='<div style="margin-bottom:12px;color:var(--text-muted);font-size:12px;">'+name+': enter ratio</div>';return;}
+    const res=calcChargeAmountPure(bNetG,bMol,bVolML,r.ratioType,ratio,pur,rMW,rDens);
+    if(res.err){h+='<div style="margin-bottom:12px;"><span class="result-label">'+name+'</span> <span class="result-value warning" style="font-size:12px;">'+res.err+'</span></div>';return;}
+    h+='<div style="margin-bottom:16px;"><div style="font-size:12px;color:var(--text-primary);font-weight:500;margin-bottom:4px;">'+name+' ('+r.ratioType+')</div>';
+    if(res.mol!==null)h+='<div class="result-line"><span class="result-label">Target moles</span><span class="result-value">'+fmt(res.mol)+' mol</span></div>';
+    if(res.volML!==null)h+='<div class="result-line"><span class="result-label">Volume to charge (net)</span><span class="result-value" style="font-size:15px;">'+fmt(res.volML*vDF)+' '+vu+'</span></div>';
+    if(res.netG!==null){h+='<div class="result-line"><span class="result-label">Net target wt</span><span class="result-value">'+fmt(res.netG*mDF)+' '+mu+'</span></div>';
+    if(pur!==100)h+='<div class="result-line"><span class="result-label">Gross wt ('+fmt(pur,1)+'% purity)</span><span class="result-value" style="font-size:15px;">'+fmt(res.grossG*mDF)+' '+mu+'</span></div>';
+    h+='<div class="result-line"><span class="result-label">Back-calc wt/wt (gross/basis)</span><span class="result-value">'+fmt(res.grossG/bWtG)+'</span></div>';
+    if(!isNaN(rDens)&&rDens>0&&res.volML===null)h+='<div class="result-line"><span class="result-label">Volume equiv. (gross)</span><span class="result-value">'+fmt(res.grossG/rDens*vDF)+' '+vu+'</span></div>';}
+    else if(res.volML!==null&&res.netG===null)h+='<div class="note-text">Enter reagent density to see mass equivalent</div>';
+    h+='</div>';
+  });
+  box.innerHTML=h;
+}
+function exportCharge(){const wb=XLSX.utils.book_new(),mu=sv('ch-mass-unit');const data=[['Charge Amount Calculator',new Date().toISOString()],[],['Basis',sv('ch-basis-name')],['Weight ('+mu+')',v('ch-basis-wt')],['Purity (%)',v('ch-basis-pur')],['MW',isNaN(v('ch-basis-mw'))?'':v('ch-basis-mw')],['Density',isNaN(v('ch-basis-dens'))?'':v('ch-basis-dens')],[],['Reagent','Ratio Type','Ratio','Purity (%)','MW','Density']];chReagents.forEach(r=>data.push([r.name||'Reagent',r.ratioType,parseFloat(r.ratio),parseFloat(r.purity),r.mw||'',r.density||'']));XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(data),'Charge');downloadXlsx(wb,'ChargeAmount');}
+addChReagent();
+
+// ========== SOLUTION PREP (UI) ==========
+let solMode='solid';
+function setSolMode(m,btn){solMode=m;document.querySelectorAll('#panel-solution .mode-btn').forEach(b=>b.classList.remove('active'));btn.classList.add('active');document.getElementById('sol-solid').style.display=m==='solid'?'block':'none';document.getElementById('sol-dilution').style.display=m==='dilution'?'block':'none';document.getElementById('sol-molarity').style.display=m==='molarity'?'block':'none';if(m!=='molarity')calcSolution();else{document.getElementById('sol-results').innerHTML='<div style="color:var(--text-muted);font-size:12px;">Fill 3 of 4 fields and click Calculate.</div>';}}
+
+function calcSolution(){
+  const box=document.getElementById('sol-results');
+  if(solMode==='solid'){
+    const conc=v('sol-conc'),vol=v('sol-vol'),mw=v('sol-mw'),pur=v('sol-purity')||100,unit=sv('sol-conc-unit'),dens=v('sol-density')||1.0;
+    if(isNaN(conc)||isNaN(vol)||conc<=0||vol<=0){box.innerHTML='<div style="color:var(--text-muted);font-size:12px;">Enter values above.</div>';return;}
+    const res=calcSolutionSolidPure(conc,vol,mw,pur,unit,dens);
+    if(res.err){box.innerHTML='<div style="color:var(--warning);font-size:12px;">'+res.err+'</div>';return;}
+    box.innerHTML='<div class="result-line"><span class="result-label">Calculation</span><span class="result-value" style="font-size:12px;color:var(--text-secondary);">'+res.explanation+'</span></div><div class="result-line"><span class="result-label">Net mass</span><span class="result-value">'+fmt(res.netMassG)+' g</span></div><div class="result-line"><span class="result-label">Gross mass ('+fmt(pur,1)+'% purity)</span><span class="result-value" style="font-size:15px;">'+fmt(res.grossG)+' g</span></div>';
+  }else if(solMode==='dilution'){
+    const sc=v('sol-stock-conc'),tc=v('sol-target-conc'),tv=v('sol-target-vol');
+    if(isNaN(sc)||isNaN(tc)||isNaN(tv)||sc<=0||tc<=0||tv<=0){box.innerHTML='<div style="color:var(--text-muted);font-size:12px;">Enter values above.</div>';return;}
+    const res=calcDilutionPure(sc,tc,tv);
+    if(res.err){box.innerHTML='<div style="color:var(--warning);font-size:12px;">'+res.err+'</div>';return;}
+    box.innerHTML='<div class="result-line"><span class="result-label">C1V1 = C2V2</span><span class="result-value" style="font-size:12px;color:var(--text-secondary);">'+fmt(sc)+' x V1 = '+fmt(tc)+' x '+fmt(tv)+'</span></div><div class="result-line"><span class="result-label">Stock volume</span><span class="result-value" style="font-size:15px;">'+fmt(res.stockVol)+' mL</span></div><div class="result-line"><span class="result-label">Diluent volume</span><span class="result-value">'+fmt(res.diluentVol)+' mL</span></div>';
+  }
+  // molarity mode uses its own button
+}
+
+function molCalcSolve(){
+  const box=document.getElementById('sol-results');
+  const ids=['mc-mass','mc-conc','mc-vol','mc-mw'];
+  const vals=ids.map(id=>{const raw=document.getElementById(id).value.trim();return raw===''?null:parseFloat(raw);});
+  ids.forEach(id=>{document.getElementById(id).classList.remove('mc-solved');});
+  const res=calcMolarityPure(vals[0],vals[1],vals[2],vals[3]);
+  if(res.err){box.innerHTML='<div style="color:var(--warning);font-size:12px;">'+res.err+'</div>';return;}
+  if(res.consistent){box.innerHTML='<div class="result-line"><span class="result-label">Status</span><span class="result-value success">All four values are consistent.</span></div>';return;}
+  if(res.inconsistent){box.innerHTML='<div class="result-line"><span class="result-label">Status</span><span class="result-value warning">Inconsistent. Expected mass = '+fmt(res.expected)+' g</span></div>';return;}
+  const el=document.getElementById(ids[res.solvedIndex]);
+  el.value=fmt(res.result);el.classList.add('mc-solved');
+  box.innerHTML='<div class="result-line"><span class="result-label">'+res.label+'</span><span class="result-value" style="font-size:15px;">'+fmt(res.result)+' '+res.unit+'</span></div>';
+}
+function molCalcReset(){['mc-mass','mc-conc','mc-vol','mc-mw'].forEach(id=>{const el=document.getElementById(id);el.value='';el.classList.remove('mc-solved');});document.getElementById('sol-results').innerHTML='<div style="color:var(--text-muted);font-size:12px;">Fill 3 of 4 fields and click Calculate.</div>';}
+// Enter key support for molarity
+['mc-mass','mc-conc','mc-vol','mc-mw'].forEach(id=>{document.getElementById(id).addEventListener('keyup',e=>{if(e.key==='Enter')molCalcSolve();});});
+
+function exportSolution(){const wb=XLSX.utils.book_new();let data;if(solMode==='solid'){data=[['Solution Prep - Solid',new Date().toISOString()],[],['Conc.',v('sol-conc'),sv('sol-conc-unit')],['Vol (mL)',v('sol-vol')],['MW',v('sol-mw')],['Purity',v('sol-purity')]];}else if(solMode==='dilution'){const sc=v('sol-stock-conc'),tc=v('sol-target-conc'),tv=v('sol-target-vol');data=[['Solution Prep - Dilution',new Date().toISOString()],[],['Stock Conc.',sc],['Target Conc.',tc],['Target Vol (mL)',tv],[],['Stock Vol (mL)',tc*tv/sc],['Diluent (mL)',tv-tc*tv/sc]];}else{data=[['Molarity Calculator',new Date().toISOString()],[],['Mass (g)',document.getElementById('mc-mass').value],['Concentration (mol/L)',document.getElementById('mc-conc').value],['Volume (L)',document.getElementById('mc-vol').value],['MW (g/mol)',document.getElementById('mc-mw').value]];}XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(data),'SolutionPrep');downloadXlsx(wb,'SolutionPrep');}
+
+
+// ========== YIELD & MASS BALANCE (UI — unchanged from v1) ==========
+let ymbSteps=[];
+function newOutput(first){return{id:Date.now()+Math.random(),name:'',mode:'masscont',net:'',mass:'',cont:'',vol:'',dens:'',isProduct:first};}
+function addYmbStep(){ymbSteps.push({id:Date.now(),title:'',blockMode:'yield',inName:'',inMode:'masscont',inNet:'',inMass:'',inCont:'',inVol:'',inDens:'',inMW:'',outMW:'',outputs:[newOutput(true)]});renderYmb();}
+function removeYmbStep(id){ymbSteps=ymbSteps.filter(s=>s.id!==id);renderYmb();calcYmb();}
+function setBlockMode(stepId,mode){const s=ymbSteps.find(x=>x.id===stepId);if(s){s.blockMode=mode;if(mode==='yield'){s.outputs=[newOutput(true)];}renderYmb();}}
+function updYmb(stepId,key,val){const s=ymbSteps.find(x=>x.id===stepId);if(s){s[key]=val;if(key==='inMode')renderYmb();else calcYmb();}}
+function addOutput(stepId){const s=ymbSteps.find(x=>x.id===stepId);if(s){s.outputs.push(newOutput(false));renderYmb();}}
+function removeOutput(stepId,outId){const s=ymbSteps.find(x=>x.id===stepId);if(s&&s.outputs.length>1){s.outputs=s.outputs.filter(o=>o.id!==outId);if(!s.outputs.some(o=>o.isProduct))s.outputs[0].isProduct=true;renderYmb();calcYmb();}}
+function updOutput(stepId,outId,key,val){const s=ymbSteps.find(x=>x.id===stepId);if(!s)return;if(key==='isProduct'){s.outputs.forEach(o=>o.isProduct=false);const o=s.outputs.find(x=>x.id===outId);if(o)o.isProduct=true;}else{const o=s.outputs.find(x=>x.id===outId);if(o){o[key]=val;if(key==='mode'){renderYmb();return;}}}calcYmb();}
+function entryFields(mode,stepId,outId){const isIn=outId===null;const mu=sv('ymb-mass-unit'),vu=sv('ymb-vol-unit');const h=isIn?(k)=>'oninput="updYmb('+stepId+',\''+k+'\',this.value)"':(k)=>'oninput="updOutput('+stepId+','+outId+',\''+k+'\',this.value)"';const gv=isIn?(k)=>{const s=ymbSteps.find(x=>x.id===stepId);return s?(s[k]||''):'';}:(k)=>{const s=ymbSteps.find(x=>x.id===stepId);const o=s?s.outputs.find(x=>x.id===outId):null;return o?(o[k]||''):''};switch(mode){case'net':return'<div class="field"><label>Net Mass ('+mu+')</label><input type="number" step="any" value="'+(isIn?gv('inNet'):gv('net'))+'" '+(isIn?h('inNet'):h('net'))+'></div>';case'masscont':return'<div class="field"><label>Mass ('+mu+')</label><input type="number" step="any" value="'+(isIn?gv('inMass'):gv('mass'))+'" '+(isIn?h('inMass'):h('mass'))+'></div><div class="field"><label>Content (wt%)</label><input type="number" step="any" value="'+(isIn?gv('inCont'):gv('cont'))+'" '+(isIn?h('inCont'):h('cont'))+'></div>';case'voldenscont':return'<div class="field"><label>Volume ('+vu+')</label><input type="number" step="any" value="'+(isIn?gv('inVol'):gv('vol'))+'" '+(isIn?h('inVol'):h('vol'))+'></div><div class="field"><label>Density (g/mL)</label><input type="number" step="any" value="'+(isIn?gv('inDens'):gv('dens'))+'" '+(isIn?h('inDens'):h('dens'))+'></div><div class="field"><label>Content (wt%)</label><input type="number" step="any" value="'+(isIn?gv('inCont'):gv('cont'))+'" '+(isIn?h('inCont'):h('cont'))+'></div>';}return'';}
+function entryModeToggle(cur,stepId,outId){const isIn=outId===null;const modes=[['net','Net Mass'],['masscont','Mass \u00d7 Content'],['voldenscont','Vol \u00d7 Dens \u00d7 Content']];const fn=isIn?(m)=>'onclick="updYmb('+stepId+',\'inMode\',\''+m+'\')"':(m)=>'onclick="updOutput('+stepId+','+outId+',\'mode\',\''+m+'\')"';return'<div class="mode-toggle">'+modes.map(([k,l])=>'<button class="mode-btn'+(cur===k?' active':'')+'" '+fn(k)+'>'+l+'</button>').join('')+'</div>';}
+function renderYmb(){document.getElementById('ymb-steps').innerHTML=ymbSteps.map((s,i)=>{const bm=s.blockMode;const showMW=bm==='yield'||bm==='mixed';const showMulti=bm==='massbal'||bm==='mixed';const outHtml=s.outputs.map((o,oi)=>{const multi=s.outputs.length>1;const namePH=bm==='massbal'?'e.g. Organic phase, Mother liquor, Wash':bm==='mixed'?'e.g. Organic phase, Mother liquor':'';return'<div class="output-block"><div class="output-header"><span>Output '+(oi+1)+'</span>'+(multi?'<button class="btn btn-danger" onclick="removeOutput('+s.id+','+o.id+')">✕</button>':'')+'</div><div class="field-row" style="margin-bottom:4px;"><div class="field"><label>Name</label><input type="text" value="'+o.name+'" placeholder="'+namePH+'" oninput="updOutput('+s.id+','+o.id+',\'name\',this.value)"></div></div>'+entryModeToggle(o.mode,s.id,o.id)+'<div class="field-row" style="margin-bottom:2px;">'+entryFields(o.mode,s.id,o.id)+'</div>'+(multi?'<label class="product-radio"><input type="radio" name="prod-'+s.id+'" '+(o.isProduct?'checked':'')+' onchange="updOutput('+s.id+','+o.id+',\'isProduct\',true)"> Product (for yield/recovery)</label>':'')+'</div>';}).join('');return'<div class="card step-card" data-id="'+s.id+'"><div class="step-header"><div class="field" style="flex:1;margin-right:8px;min-width:0;"><label>Block Name</label><input class="title-input" type="text" value="'+s.title+'" placeholder="e.g. Step 1 Reaction, LLE 1, Crystallization" oninput="updYmb('+s.id+',\'title\',this.value)" style="width:100%;"></div><button class="btn btn-danger" style="align-self:flex-end;" onclick="removeYmbStep('+s.id+')">✕</button></div><div class="block-mode-bar"><button class="block-mode-btn'+(bm==='yield'?' active':'')+'" onclick="setBlockMode('+s.id+',\'yield\')">Yield</button><button class="block-mode-btn'+(bm==='massbal'?' active':'')+'" onclick="setBlockMode('+s.id+',\'massbal\')">Mass Balance</button><button class="block-mode-btn'+(bm==='mixed'?' active':'')+'" onclick="setBlockMode('+s.id+',\'mixed\')">Mixed</button></div><div class="section-label">Input</div><div class="field-row" style="margin-bottom:4px;"><div class="field"><label>Name</label><input type="text" value="'+s.inName+'" oninput="updYmb('+s.id+',\'inName\',this.value)"></div>'+(showMW?'<div class="field"><label>Input MW (g/mol)</label><input type="number" step="any" value="'+s.inMW+'" oninput="updYmb('+s.id+',\'inMW\',this.value)"></div>':'')+'</div>'+entryModeToggle(s.inMode,s.id,null)+'<div class="field-row">'+entryFields(s.inMode,s.id,null)+'</div><div class="section-label" style="margin-top:16px;">Output</div>'+(showMW?'<div class="field-row" style="margin-bottom:8px;"><div class="field"><label>Output MW (g/mol)'+(bm==='yield'?'':' \u2014 if different from input')+'</label><input type="number" step="any" value="'+s.outMW+'" oninput="updYmb('+s.id+',\'outMW\',this.value)"></div></div>':'')+outHtml+(showMulti?'<div class="btn-row" style="margin-top:4px;"><button class="btn btn-sm" onclick="addOutput('+s.id+')">+ Add Output</button></div>':'')+'<div class="result-box ymb-result" style="margin-top:12px;"></div></div>';}).join('');calcYmb();}
+function calcYmb(){let summaryHtml='',cumulative=1,hasCalc=false;const mu=sv('ymb-mass-unit'),vu=sv('ymb-vol-unit');const toG=mu==='kg'?1000:1,toML=vu==='L'?1000:1,mDF=1/toG;ymbSteps.forEach((s,i)=>{const rbox=document.querySelector('.step-card[data-id="'+s.id+'"] .ymb-result');if(!rbox)return;const bm=s.blockMode;const inNet=getNetG(s.inMode,{net:s.inNet,mass:s.inMass,cont:s.inCont,vol:s.inVol,dens:s.inDens},toG,toML);const inMW=parseFloat(s.inMW),outMW=parseFloat(s.outMW);const inLabel=s.inName||'Input';if(inNet===null||inNet<=0){rbox.innerHTML='<div style="color:var(--text-muted);font-size:12px;">Enter input values.</div>';return;}const inMoles=(bm!=='massbal'&&!isNaN(inMW)&&inMW>0)?inNet/inMW:null;let html='';let totalOut=0,productNet=null,anyValid=false;const outR=[];s.outputs.forEach(o=>{const oNet=getNetG(o.mode,{net:o.net,mass:o.mass,cont:o.cont,vol:o.vol,dens:o.dens},toG,toML);outR.push({name:o.name||'Output',net:oNet,isProduct:o.isProduct});if(oNet!==null){totalOut+=oNet;anyValid=true;if(o.isProduct)productNet=oNet;}});if(s.outputs.length===1&&outR[0].net!==null)productNet=outR[0].net;if(!anyValid){html+='<div class="result-line"><span class="result-label">'+inLabel+' net</span><span class="result-value">'+fmt(inNet*mDF)+' '+mu+'</span></div>';if(inMoles!==null)html+='<div class="result-line"><span class="result-label">'+inLabel+' moles</span><span class="result-value">'+fmt(inMoles)+' mol</span></div>';html+='<div style="color:var(--text-muted);font-size:12px;margin-top:8px;">Enter output values.</div>';rbox.innerHTML=html;return;}let stepVal=null;if(bm==='yield'){const outNet=outR[0].net;const outLabel=outR[0].name||'Output';html+='<div class="result-line"><span class="result-label">'+inLabel+' net</span><span class="result-value">'+fmt(inNet*mDF)+' '+mu+'</span></div>';if(inMoles!==null)html+='<div class="result-line"><span class="result-label">'+inLabel+' moles</span><span class="result-value">'+fmt(inMoles)+' mol</span></div>';html+='<div class="result-line"><span class="result-label">'+outLabel+' net</span><span class="result-value">'+fmt(outNet*mDF)+' '+mu+'</span></div>';if(inMoles!==null&&!isNaN(outMW)&&outMW>0){const outMoles=outNet/outMW;const molarYield=outMoles/inMoles*100;html+='<div class="result-line"><span class="result-label">'+outLabel+' moles</span><span class="result-value">'+fmt(outMoles)+' mol</span></div><div class="sep"></div><div class="result-line"><span class="result-label">Molar yield</span><span class="result-value" style="font-size:16px;">'+fmt(molarYield,1)+'%</span></div>';stepVal=molarYield;}else{const rec=outNet/inNet*100;html+='<div class="sep"></div><div class="result-line"><span class="result-label">Recovery</span><span class="result-value" style="font-size:16px;">'+fmt(rec,1)+'%</span></div>';stepVal=rec;}}else if(bm==='massbal'){html+='<div class="result-line"><span class="result-label">'+inLabel+' net</span><span class="result-value">'+fmt(inNet*mDF)+' '+mu+'</span></div><div class="sep"></div>';outR.forEach(o=>{if(o.net===null)return;html+='<div class="result-line"><span class="result-label">'+o.name+' net</span><span class="result-value">'+fmt(o.net*mDF)+' '+mu+' ('+fmt(o.net/inNet*100,1)+'%)</span></div>';});html+='<div class="sep"></div>';const mb=totalOut/inNet*100,cls=(mb>=95&&mb<=105)?'success':'warning';html+='<div class="result-line"><span class="result-label">Total output</span><span class="result-value">'+fmt(totalOut*mDF)+' '+mu+'</span></div><div class="result-line"><span class="result-label">Mass balance</span><span class="result-value '+cls+'">'+fmt(mb,1)+'%</span></div><div class="result-line"><span class="result-label">Unaccounted</span><span class="result-value '+cls+'">'+fmt((inNet-totalOut)*mDF)+' '+mu+'</span></div>';stepVal=productNet!==null?productNet/inNet*100:mb;}else{html+='<div class="result-line"><span class="result-label">'+inLabel+' net</span><span class="result-value">'+fmt(inNet*mDF)+' '+mu+'</span></div>';if(inMoles!==null)html+='<div class="result-line"><span class="result-label">'+inLabel+' moles</span><span class="result-value">'+fmt(inMoles)+' mol</span></div>';html+='<div class="sep"></div>';outR.forEach(o=>{if(o.net===null)return;html+='<div class="result-line"><span class="result-label">'+o.name+' net</span><span class="result-value">'+fmt(o.net*mDF)+' '+mu+' ('+fmt(o.net/inNet*100,1)+'%)</span></div>';});html+='<div class="sep"></div>';const mb2=totalOut/inNet*100,cls2=(mb2>=95&&mb2<=105)?'success':'warning';html+='<div class="result-line"><span class="result-label">Total output</span><span class="result-value">'+fmt(totalOut*mDF)+' '+mu+'</span></div><div class="result-line"><span class="result-label">Mass balance</span><span class="result-value '+cls2+'">'+fmt(mb2,1)+'%</span></div><div class="result-line"><span class="result-label">Unaccounted</span><span class="result-value '+cls2+'">'+fmt((inNet-totalOut)*mDF)+' '+mu+'</span></div>';if(inMoles!==null&&!isNaN(outMW)&&outMW>0&&productNet!==null){const outMoles=productNet/outMW;const molarYield=outMoles/inMoles*100;html+='<div class="sep"></div><div class="result-line"><span class="result-label">Product moles</span><span class="result-value">'+fmt(outMoles)+' mol</span></div><div class="result-line"><span class="result-label">Molar yield</span><span class="result-value" style="font-size:15px;">'+fmt(molarYield,1)+'%</span></div>';stepVal=molarYield;}else{stepVal=productNet!==null?productNet/inNet*100:mb2;}}rbox.innerHTML=html;if(stepVal!==null){hasCalc=true;cumulative*=stepVal/100;const label=s.title||s.inName||('Block '+(i+1));const typeLabel=bm==='yield'?'yield':bm==='massbal'?'recovery':'yield';summaryHtml+='<div class="result-line"><span class="result-label">'+label+' ('+typeLabel+')</span><span class="result-value">'+fmt(stepVal,1)+'%</span></div>';}});const sumBox=document.getElementById('ymb-summary');if(!hasCalc){sumBox.innerHTML='<div style="color:var(--text-muted);font-size:12px;">Add at least one block.</div>';return;}summaryHtml+='<div class="sep"></div><div class="result-line"><span class="result-label">Cumulative</span><span class="result-value" style="font-size:16px;">'+fmt(cumulative*100,1)+'%</span></div>';sumBox.innerHTML=summaryHtml;}
+function exportYmb(){const wb=XLSX.utils.book_new(),mu=sv('ymb-mass-unit'),toG=mu==='kg'?1000:1,toML=sv('ymb-vol-unit')==='L'?1000:1;const data=[['Yield & Mass Balance',new Date().toISOString()],[]];ymbSteps.forEach((s,i)=>{data.push([s.title||('Block '+(i+1)),'Mode:',s.blockMode]);data.push(['Input',s.inName,'Mode:',s.inMode]);const inNet=getNetG(s.inMode,{net:s.inNet,mass:s.inMass,cont:s.inCont,vol:s.inVol,dens:s.inDens},toG,toML);data.push(['Input Net (g)',inNet]);if(s.inMW)data.push(['Input MW',parseFloat(s.inMW)]);if(s.outMW)data.push(['Output MW',parseFloat(s.outMW)]);data.push(['Output','Mode','Net (g)','% of Input','Product']);s.outputs.forEach(o=>{const oN=getNetG(o.mode,{net:o.net,mass:o.mass,cont:o.cont,vol:o.vol,dens:o.dens},toG,toML);data.push([o.name||'Output',o.mode,oN,oN&&inNet?oN/inNet*100:'',o.isProduct?'Yes':'']);});data.push([]);});XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(data),'YieldMassBal');downloadXlsx(wb,'YieldMassBal');}
+addYmbStep();
+
+
+// ========== UNIT CONVERTER (UI) — pressure section replaced ==========
+const unitDefs={mass:{units:['mg','g','kg','lb','oz'],factors:{mg:0.001,g:1,kg:1000,lb:453.592,oz:28.3495}},volume:{units:['\u00b5L','mL','L','gal'],factors:{'\u00b5L':0.001,mL:1,L:1000,gal:3785.41}},temperature:{units:['\u00b0C','\u00b0F','K'],special:true},concentration:{units:['mol/L','mmol/L','g/L','mg/L','ppm','ppb','wt%'],special:true},length:{units:['nm','\u00b5m','mm','cm','m','in','ft'],factors:{nm:1e-6,'\u00b5m':0.001,mm:1,cm:10,m:1000,'in':25.4,ft:304.8}}};
+
+function updateUnitOptions(){
+  const cat=sv('unit-cat');
+  const isPres=cat==='pressure';
+  document.getElementById('unit-standard-fields').style.display=isPres?'none':'block';
+  document.getElementById('unit-pres-sync').style.display=isPres?'block':'none';
+  if(isPres){document.getElementById('unit-results').innerHTML='<div style="color:var(--text-muted);font-size:12px;">Type in any field to convert.</div>';return;}
+  const def=unitDefs[cat],from=document.getElementById('unit-from'),to=document.getElementById('unit-to');
+  from.innerHTML=to.innerHTML=def.units.map(u=>'<option value="'+u+'">'+u+'</option>').join('');
+  if(def.units.length>1)to.selectedIndex=1;
+  document.getElementById('unit-mw-row').style.display=cat==='concentration'?'flex':'none';
+  calcUnits();
+}
+
+function syncPressure(source){
+  const val=v('pres-'+source.replace('kgf','kgf'));
+  if(isNaN(val)){document.getElementById('unit-results').innerHTML='<div style="color:var(--text-muted);font-size:12px;">Enter a value.</div>';return;}
+  const r=calcPressureSyncPure(source,val);
+  if(source!=='kgf')document.getElementById('pres-kgf').value=parseFloat(r.kgf.toFixed(4));
+  if(source!=='mmhg')document.getElementById('pres-mmhg').value=parseFloat(r.mmhg.toFixed(2));
+  if(source!=='hpa')document.getElementById('pres-hpa').value=parseFloat(r.hpa.toFixed(2));
+  document.getElementById('unit-results').innerHTML='<div class="result-line"><span class="result-label">kgf/cm\u00b2 (gauge)</span><span class="result-value">'+fmt(r.kgf)+'</span></div><div class="result-line"><span class="result-label">mmHg (abs)</span><span class="result-value">'+fmt(r.mmhg)+'</span></div><div class="result-line"><span class="result-label">hPa (abs)</span><span class="result-value">'+fmt(r.hpa)+'</span></div>';
+}
+
+function calcUnits(){
+  const cat=sv('unit-cat'),val=v('unit-value'),from=sv('unit-from'),to=sv('unit-to'),box=document.getElementById('unit-results');
+  if(cat==='pressure')return;// handled by syncPressure
+  if(isNaN(val)){box.innerHTML='<div style="color:var(--text-muted);font-size:12px;">Enter a value.</div>';return;}
+  let result;
+  if(cat==='temperature'){let c;if(from==='\u00b0C')c=val;else if(from==='\u00b0F')c=(val-32)*5/9;else c=val-273.15;if(to==='\u00b0C')result=c;else if(to==='\u00b0F')result=c*9/5+32;else result=c+273.15;}
+  else if(cat==='concentration'){const mw=v('unit-mw'),needsMW=(from==='mol/L'||from==='mmol/L'||to==='mol/L'||to==='mmol/L')&&!(from==='mol/L'&&to==='mmol/L')&&!(from==='mmol/L'&&to==='mol/L');if(needsMW&&(isNaN(mw)||mw<=0)){box.innerHTML='<div style="color:var(--warning);font-size:12px;">MW required.</div>';return;}let g;switch(from){case'g/L':g=val;break;case'mg/L':case'ppm':g=val/1000;break;case'ppb':g=val/1e6;break;case'mol/L':g=val*mw;break;case'mmol/L':g=val*mw/1000;break;case'wt%':g=val*10;break;}switch(to){case'g/L':result=g;break;case'mg/L':case'ppm':result=g*1000;break;case'ppb':result=g*1e6;break;case'mol/L':result=g/mw;break;case'mmol/L':result=g/mw*1000;break;case'wt%':result=g/10;break;}}
+  else{const def=unitDefs[cat];result=val*def.factors[from]/def.factors[to];}
+  box.innerHTML='<div class="result-line"><span class="result-label">'+fmt(val)+' '+from+'</span><span class="result-value" style="font-size:16px;">'+fmt(result)+' '+to+'</span></div>';
+}
+function exportUnits(){const wb=XLSX.utils.book_new();const cat=sv('unit-cat');let data;if(cat==='pressure'){data=[['Pressure Converter',new Date().toISOString()],[],['kgf/cm\u00b2 (gauge)',document.getElementById('pres-kgf').value],['mmHg (abs)',document.getElementById('pres-mmhg').value],['hPa (abs)',document.getElementById('pres-hpa').value]];}else{data=[['Unit Converter',new Date().toISOString()],[],['From',v('unit-value')+' '+sv('unit-from')],['To',sv('unit-to')]];}XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(data),'UnitConverter');downloadXlsx(wb,'UnitConverter');}
+updateUnitOptions();
+
+// ========== AGITATION SCALE-UP (UI) ==========
+function calcAgi(){
+  const T1=v('agi-T1'),Z1=v('agi-Z1'),N1=v('agi-N1');
+  const agiID=parseInt(sv('agi-type')),dtID=parseInt(sv('agi-dt')),critID=parseInt(sv('agi-crit'));
+  const den=v('agi-den'),visc=v('agi-visc'),sUp=v('agi-sup');
+  const userNq=v('agi-Nq'),userNp=v('agi-Np');
+  document.getElementById('agi-user-fields').style.display=agiID===5?'flex':'none';
+  const box=document.getElementById('agi-results');
+  if([T1,Z1,N1,den,visc,sUp].some(x=>isNaN(x)||x<=0)){box.innerHTML='<div style="color:var(--text-muted);font-size:12px;">Enter valid values.</div>';return;}
+  if(agiID===5&&(isNaN(userNq)||userNq<=0||isNaN(userNp)||userNp<=0)){box.innerHTML='<div style="color:var(--warning);font-size:12px;">Enter Nq and Np for user-defined agitator.</div>';return;}
+  const r=calcAgiPure(T1,Z1,N1,agiID,dtID,critID,den,visc,sUp,userNq,userNp);
+  const s=r.small,l=r.large;
+  const af=(x,dp)=>{if(Math.abs(x)<0.1&&x!==0)return x.toExponential(2);return x.toFixed(dp);};
+  const rows=[
+    ['Volume','m\u00b3',af(s.V,3),af(l.V,1)],
+    ['Reactor Diameter','mm',af(s.T,1),af(l.T,1)],
+    ['Liquid Level','mm',af(s.Z,1),af(l.Z,1)],
+    ['Impeller Diameter','mm',af(s.D,1),af(l.D,1)],
+    ['Equiv. Diameter','mm',af(s.Teq,1),af(l.Teq,1)],
+    ['Scaling Exponent','','\u2014',r.nLabel],
+    ['Shaft Speed','rpm',af(s.N,0),af(l.N,0)],
+    ['Reynolds No.','',af(s.Re,0),af(l.Re,0)],
+    ['Tip Speed','m/s',af(s.tipSpeed,2),af(l.tipSpeed,2)],
+    ['Nq (Flow No.)','',af(s.Nq,2),af(l.Nq,2)],
+    ['Pumping Rate','m\u00b3/s',af(s.Q,4),af(l.Q,4)],
+    ['Np (Power No.)','',af(s.Np,2),af(l.Np,2)],
+    ['Power','kW',af(s.P,3),af(l.P,3)],
+    ['Power/Volume','kW/m\u00b3',af(s.PV,2),af(l.PV,2)],
+    ['Froude No.','',af(s.Fr,3),af(l.Fr,3)],
+    ['Bulk Velocity','m/s',af(s.Vc,3),af(l.Vc,3)],
+    ['Scale of Agitation','',af(s.SoA,1),af(l.SoA,1)]
+  ];
+  let h='<div class="result-line" style="margin-bottom:8px;"><span class="result-label">Scale-up ratio R</span><span class="result-value">'+af(r.R,2)+'</span></div>';
+  h+='<table class="agi-table"><thead><tr><th>Parameter</th><th>Unit</th><th>Small Scale</th><th>Large Scale</th></tr></thead><tbody>';
+  rows.forEach(row=>{h+='<tr><td>'+row[0]+'</td><td class="agi-unit">'+row[1]+'</td><td class="agi-val">'+row[2]+'</td><td class="agi-val">'+row[3]+'</td></tr>';});
+  h+='</tbody></table>';
+  box.innerHTML=h;
+}
+function exportAgi(){
+  const wb=XLSX.utils.book_new();
+  const data=[['Agitation Scale-up',new Date().toISOString()],[],
+    ['Reactor Diameter (mm)',v('agi-T1')],['Liquid Level (mm)',v('agi-Z1')],['Shaft Speed (rpm)',v('agi-N1')],
+    ['Agitator Type',document.getElementById('agi-type').options[document.getElementById('agi-type').selectedIndex].text],
+    ['D/T Ratio',AGI_DT_VALS[parseInt(sv('agi-dt'))]],
+    ['Density (kg/m\u00b3)',v('agi-den')],['Viscosity (cP)',v('agi-visc')],
+    ['Scale-up Factor',v('agi-sup')],['Criterion',document.getElementById('agi-crit').options[document.getElementById('agi-crit').selectedIndex].text],
+    [],['Parameter','Unit','Small Scale','Large Scale']];
+  // Recalculate for export
+  const T1=v('agi-T1'),Z1=v('agi-Z1'),N1=v('agi-N1'),agiID=parseInt(sv('agi-type')),dtID=parseInt(sv('agi-dt')),critID=parseInt(sv('agi-crit'));
+  const r=calcAgiPure(T1,Z1,N1,agiID,dtID,critID,v('agi-den'),v('agi-visc'),v('agi-sup'),v('agi-Nq'),v('agi-Np'));
+  const s=r.small,l=r.large;
+  [['Volume','m\u00b3',s.V,l.V],['Reactor Diameter','mm',s.T,l.T],['Liquid Level','mm',s.Z,l.Z],['Impeller Diameter','mm',s.D,l.D],['Shaft Speed','rpm',s.N,l.N],['Reynolds No.','',s.Re,l.Re],['Tip Speed','m/s',s.tipSpeed,l.tipSpeed],['Power','kW',s.P,l.P],['Power/Volume','kW/m\u00b3',s.PV,l.PV]].forEach(row=>data.push(row));
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(data),'AgiScaleup');
+  downloadXlsx(wb,'AgiScaleup');
+}
+calcAgi();
+
+// ========== EQUATION BUILDER (UI — with scope display) ==========
+let eqVars=[],eqEqs=[];
+function addEqVariable(){eqVars.push({id:Date.now(),name:'',value:''});renderEqVars();}
+function removeEqVar(id){eqVars=eqVars.filter(v=>v.id!==id);renderEqVars();}
+function renderEqVars(){document.getElementById('eq-variables').innerHTML=eqVars.map(v=>'<div class="dynamic-row" data-id="'+v.id+'"><div class="field"><label>Name</label><input type="text" value="'+v.name+'" onchange="updEqVar('+v.id+',\'name\',this.value)" placeholder="e.g. mass_in"></div><div class="field"><label>Value</label><input type="number" step="any" value="'+v.value+'" onchange="updEqVar('+v.id+',\'value\',this.value)"></div><button class="btn btn-danger" onclick="removeEqVar('+v.id+')">✕</button></div>').join('');}
+function updEqVar(id,key,val){const v=eqVars.find(x=>x.id===id);if(v)v[key]=val;}
+function addEqEquation(){eqEqs.push({id:Date.now(),name:'',expr:''});renderEqEqs();}
+function removeEqEq(id){eqEqs=eqEqs.filter(e=>e.id!==id);renderEqEqs();}
+function renderEqEqs(){
+  // Build scope display showing available variables before each equation
+  const baseVars=eqVars.filter(v=>v.name&&v.value!=='').map(v=>v.name);
+  let runningScope=[...baseVars];
+  document.getElementById('eq-equations').innerHTML=eqEqs.map((e,i)=>{
+    const scopeHtml=runningScope.length?'<div class="scope-bar"><div class="scope-bar-label">Available variables</div>'+runningScope.map(n=>'<span class="scope-pill">'+n+'</span>').join('')+'</div>':'<div class="scope-bar"><div class="scope-bar-label" style="color:var(--text-muted);">No variables defined yet</div></div>';
+    if(e.name)runningScope=[...runningScope,e.name];
+    return'<div class="eq-step" data-id="'+e.id+'">'+scopeHtml+'<div class="field-row"><div class="field" style="max-width:160px;"><label>Result Name</label><input type="text" value="'+e.name+'" onchange="updEqEq('+e.id+',\'name\',this.value)" placeholder="e.g. yield"></div><div class="field"><label>Equation (Step '+(i+1)+')</label><input type="text" class="eq-input" value="'+e.expr+'" onchange="updEqEq('+e.id+',\'expr\',this.value)" placeholder="e.g. (mass * purity) / (area * volume * 100)"></div><button class="btn btn-danger" onclick="removeEqEq('+e.id+')" style="align-self:flex-end;">✕</button></div></div>';
+  }).join('');
+}
+function updEqEq(id,key,val){const e=eqEqs.find(x=>x.id===id);if(e)e[key]=val;if(key==='name')renderEqEqs();}
+function evalEquations(){
+  const box=document.getElementById('eq-results');
+  const origScope={};
+  for(const v of eqVars){if(v.name&&v.value!==''){origScope[v.name]=parseFloat(v.value);}}
+  let html='';
+  for(const eq of eqEqs){
+    if(!eq.expr)continue;
+    try{
+      const names=Object.keys(origScope).sort((a,b)=>b.length-a.length);
+      const safeScope={};let safeExpr=eq.expr;
+      names.forEach((name,i)=>{const token='__v'+i;const escaped=name.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');safeExpr=safeExpr.replace(new RegExp(escaped,'gi'),token);safeScope[token]=origScope[name];});
+      safeExpr=safeExpr.replace(/\bx\b/g,'*');
+      const r=math.evaluate(safeExpr,safeScope);
+      const n=eq.name||'result';
+      origScope[n]=r;
+      html+='<div class="result-line"><span class="result-label">'+n+' = '+eq.expr+'</span><span class="result-value">'+fmt(r)+'</span></div>';
+    }catch(err){html+='<div class="result-line"><span class="result-label">'+(eq.name||'eq')+'</span><span class="result-value warning">'+err.message+'</span></div>';}
+  }
+  if(!html)html='<div style="color:var(--text-muted);font-size:12px;">No equations to evaluate.</div>';
+  box.innerHTML=html;
+  renderEqEqs();// Update scope display with results
+}
+function exportEquation(){
+  const wb=XLSX.utils.book_new();const data=[['Equation Builder',new Date().toISOString()],[],['Variables'],['Name','Value']];
+  eqVars.forEach(v=>{if(v.name)data.push([v.name,parseFloat(v.value)]);});
+  data.push([],['Equations'],['Name','Expression','Result']);
+  const origScope={};eqVars.forEach(v=>{if(v.name&&v.value!=='')origScope[v.name]=parseFloat(v.value);});
+  eqEqs.forEach(eq=>{if(!eq.expr)return;try{const names=Object.keys(origScope).sort((a,b)=>b.length-a.length);const safeScope={};let safeExpr=eq.expr;names.forEach((name,i)=>{const token='__v'+i;const escaped=name.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');safeExpr=safeExpr.replace(new RegExp(escaped,'gi'),token);safeScope[token]=origScope[name];});safeExpr=safeExpr.replace(/\bx\b/g,'*');const r=math.evaluate(safeExpr,safeScope);origScope[eq.name||'result']=r;data.push([eq.name||'',eq.expr,r]);}catch(e){data.push([eq.name||'',eq.expr,'ERROR']);}});
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(data),'EquationBuilder');downloadXlsx(wb,'EquationBuilder');
+}
+addEqVariable();addEqEquation();
+
+// Init theme icon
+try{const t=document.documentElement.getAttribute('data-theme');if(t==='light'){const btn=document.querySelector('.theme-toggle');if(btn)btn.textContent='\u263e';}}catch(e){}
+</script>
+<script>
+
+(function () {
+  'use strict';
+
+  // ============================================================
+  // DATA MODEL
+  // ============================================================
+
+  /** @type {Array<{id:string, sampleName:string, sampleId:string, peaks:Array<{peakNum:number,rt:number,area:number}>, role:string, refRt:number|null, blankId:string|null, blankRefRt:number|null}>} */
+  var files = [];
+
+  function uid() {
+    return 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  }
+
+  function getSampleFiles() { return files.filter(function (f) { return f.role === 'sample'; }); }
+  function getBlankFiles() { return files.filter(function (f) { return f.role === 'blank'; }); }
+
+  // ============================================================
+  // PARSING
+  // ============================================================
+
+  function splitTsvLine(line) { return line.split('\t'); }
+
+  function parseLabSolutionsAscii(text) {
+    var warnings = [];
+    var lines = text.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+    var sampleName = 'Unknown';
+    var sampleId = '';
+
+    var si = lines.findIndex(function (l) { return l.trim() === '[Sample Information]'; });
+    if (si >= 0) {
+      for (var i = si + 1; i < lines.length; i++) {
+        if (lines[i].trimStart().startsWith('[')) break;
+        var parts = splitTsvLine(lines[i]);
+        var key = (parts[0] || '').replace(/^\uFEFF/, '').trim();
+        if (key === 'Sample Name' && parts.length >= 2) sampleName = parts.slice(1).join('\t').trim() || 'Unknown';
+        if (key === 'Sample ID' && parts.length >= 2) sampleId = parts.slice(1).join('\t').trim();
+        if (sampleName !== 'Unknown' && sampleId !== '') break;
+      }
+    } else {
+      warnings.push('[Sample Information] not found.');
+    }
+
+    // Find all peak-table sections regardless of detector/channel naming
+    // (Detector A, PDA-Ch1, PDA-Ch2, etc.) and pick the first one that
+    // actually contains peaks. Some methods emit an empty "Detector A"
+    // section ahead of the populated PDA channel, so name-based matching is
+    // not reliable. Selection is driven by each section's "# of Peaks" count.
+    var ptSections = [];
+    for (var si = 0; si < lines.length; si++) {
+      if (/^\[Peak Table\(.*\)\]\s*$/.test(lines[si].trim())) {
+        var count = null;
+        for (var sj = si + 1; sj < lines.length && sj < si + 4; sj++) {
+          var sc = splitTsvLine(lines[sj]).map(function (c) { return c.replace(/^\uFEFF/, '').trim(); });
+          if (sc[0] === '# of Peaks') { count = parseInt((sc[1] || '').trim(), 10); break; }
+        }
+        ptSections.push({ idx: si, name: lines[si].trim(), count: count });
+      }
+    }
+
+    var withCount = ptSections.filter(function (s) { return Number.isFinite(s.count) && s.count > 0; });
+    var unknown = ptSections.filter(function (s) { return !Number.isFinite(s.count); });
+    var chosen = withCount.length ? withCount : unknown;
+    var ptIdx = chosen.length ? chosen[0].idx : -1;
+    if (withCount.length > 1) {
+      warnings.push('Multiple populated peak tables found (' +
+        withCount.map(function (s) { return s.name; }).join(', ') +
+        '); used ' + withCount[0].name + '.');
+    }
+
+    var peaks = [];
+    if (ptIdx < 0) {
+      warnings.push('No populated peak table found.');
+      return { sampleName: sampleName, sampleId: sampleId, peaks: peaks, warnings: warnings };
+    }
+
+    var headerLineIdx = -1, colPeak = -1, colRt = -1, colArea = -1;
+    for (var i = ptIdx + 1; i < lines.length; i++) {
+      if (lines[i].trimStart().startsWith('[')) break;
+      var cells = splitTsvLine(lines[i]).map(function (c) { return c.replace(/^\uFEFF/, '').trim(); });
+      if (cells[0] === 'Peak#' || (cells[0] && cells[0].startsWith('Peak#'))) {
+        headerLineIdx = i;
+        colPeak = cells.indexOf('Peak#');
+        colRt = cells.indexOf('R.Time');
+        colArea = cells.indexOf('Area');
+        if (colPeak < 0 || colRt < 0 || colArea < 0) {
+          warnings.push('Peak table header missing Peak#, R.Time, or Area.');
+          return { sampleName: sampleName, sampleId: sampleId, peaks: peaks, warnings: warnings };
+        }
+        break;
+      }
+    }
+    if (headerLineIdx < 0) {
+      warnings.push('Peak table header row not found.');
+      return { sampleName: sampleName, sampleId: sampleId, peaks: peaks, warnings: warnings };
+    }
+
+    for (var i = headerLineIdx + 1; i < lines.length; i++) {
+      if (!lines[i].trim()) continue;
+      if (lines[i].trimStart().startsWith('[')) break;
+      var parts = splitTsvLine(lines[i]);
+      var peakNum = parseInt((parts[colPeak] || '').trim(), 10);
+      var rt = parseFloat((parts[colRt] || '').trim());
+      var area = parseFloat((parts[colArea] || '').trim());
+      if (Number.isFinite(peakNum) && Number.isFinite(rt) && Number.isFinite(area)) {
+        peaks.push({ peakNum: peakNum, rt: rt, area: area });
+      }
+    }
+    return { sampleName: sampleName, sampleId: sampleId, peaks: peaks, warnings: warnings };
+  }
+
+  function defaultRefRt(peaks) {
+    if (!peaks.length) return null;
+    var best = peaks[0];
+    for (var i = 1; i < peaks.length; i++) { if (peaks[i].area > best.area) best = peaks[i]; }
+    return best.rt;
+  }
+
+  function splitCsvLine(line) {
+    // Handles simple quoted fields; sufficient for Agilent peak-table exports.
+    var out = [], cur = '', inQ = false;
+    for (var i = 0; i < line.length; i++) {
+      var ch = line[i];
+      if (inQ) {
+        if (ch === '"') { if (line[i + 1] === '"') { cur += '"'; i++; } else inQ = false; }
+        else cur += ch;
+      } else {
+        if (ch === '"') inQ = true;
+        else if (ch === ',') { out.push(cur); cur = ''; }
+        else cur += ch;
+      }
+    }
+    out.push(cur);
+    return out.map(function (c) { return c.trim(); });
+  }
+
+  function parseAgilentCsv(text) {
+    var warnings = [];
+    var lines = text.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+    var sampleName = 'Unknown', sampleId = '';
+
+    for (var i = 0; i < lines.length; i++) {
+      var m = lines[i].match(/^\s*"?Sample\s*name\s*:?"?\s*,?\s*(.*)$/i);
+      if (m) {
+        var rest = splitCsvLine(m[1]).filter(function (c) { return c !== ''; });
+        if (rest.length) sampleName = rest[0];
+        break;
+      }
+    }
+
+    var hdrIdx = -1, cRt = -1, cArea = -1;
+    for (var i = 0; i < lines.length; i++) {
+      var cells = splitCsvLine(lines[i]);
+      var rtI = cells.findIndex(function (c) { return /^RT(\s*\[\s*min\s*\])?$/i.test(c); });
+      var arI = cells.findIndex(function (c) { return /^Area$/i.test(c); });
+      if (rtI >= 0 && arI >= 0) { hdrIdx = i; cRt = rtI; cArea = arI; break; }
+    }
+    var peaks = [];
+    if (hdrIdx < 0) {
+      warnings.push('Agilent header row (RT [min] / Area) not found.');
+      return { sampleName: sampleName, sampleId: sampleId, peaks: peaks, warnings: warnings };
+    }
+
+    var pn = 0;
+    for (var i = hdrIdx + 1; i < lines.length; i++) {
+      if (!lines[i].trim()) continue;
+      var cells = splitCsvLine(lines[i]);
+      if (cells.some(function (c) { return /^Sum$/i.test(c); })) break; // ",,Sum" terminator
+      var rt = parseFloat(cells[cRt]);
+      var area = parseFloat(cells[cArea]);
+      if (Number.isFinite(rt) && Number.isFinite(area)) { pn++; peaks.push({ peakNum: pn, rt: rt, area: area }); }
+    }
+    if (!peaks.length) warnings.push('No data rows parsed from Agilent peak table.');
+    return { sampleName: sampleName, sampleId: sampleId, peaks: peaks, warnings: warnings };
+  }
+
+  function parseFile(text) {
+    var t = text.replace(/^\uFEFF/, '');
+    var head = t.slice(0, 300);
+    // Vendor auto-detection: LabSolutions begins with [Header]; Agilent begins with "Data file:".
+    if (/^\s*\[Header\]/.test(head) || /\[Sample Information\]/.test(t.slice(0, 3000))) return parseLabSolutionsAscii(text);
+    if (/Data\s*file\s*:/i.test(head) || /Sample\s*name\s*:/i.test(t.slice(0, 800))) return parseAgilentCsv(text);
+    // Fallback: try LabSolutions, then Agilent.
+    var r = parseLabSolutionsAscii(text);
+    if (r.peaks.length) return r;
+    return parseAgilentCsv(text);
+  }
+
+  // ============================================================
+  // UTILITIES
+  // ============================================================
+
+  function roundRRT(rrt, places) { var f = Math.pow(10, places); return Math.round(rrt * f) / f; }
+  function formatGroupLabel(g, places) { return Number(g.toFixed(places)).toFixed(places); }
+  function fmtFixed(v, dp) { if (v == null || !Number.isFinite(Number(v))) return ''; return Number(v).toFixed(dp); }
+  function fmtRaw(v) { if (v == null || !Number.isFinite(Number(v))) return ''; return String(Number(v)); }
+  function formatAreaLocale(a) { if (a == null || !Number.isFinite(Number(a))) return ''; return Math.round(Number(a)).toLocaleString(); }
+
+  function getColLabels(mode) {
+    var cols = ['RRT', 'RT', 'Area'];
+    if (mode === 'both' || mode === 'total') cols.push('Area%Total');
+    if (mode === 'both' || mode === 'ref') cols.push('Area%vsRef');
+    return cols;
+  }
+
+  function getSettings() {
+    var groupDp = parseInt(document.getElementById('groupDp').value, 10);
+    var rrtDp = parseInt(document.getElementById('rrtDp').value, 10);
+    var areaPctDp = parseInt(document.getElementById('areaPctDp').value, 10);
+    var areaPctMode = document.getElementById('areaPctMode').value;
+    var subMode = document.getElementById('subMode').value;
+    var rtTolerance = 0;
+    var tolEl = document.getElementById('rtTolerance');
+    if (tolEl) rtTolerance = parseFloat(tolEl.value) || 0;
+    var negHandling = 'eliminate';
+    var negEl = document.getElementById('negHandling');
+    if (negEl) negHandling = negEl.value;
+
+    return {
+      groupDp: (Number.isFinite(groupDp) && groupDp >= 1 && groupDp <= 3) ? groupDp : 2,
+      rrtDp: (Number.isFinite(rrtDp) && rrtDp >= 1 && rrtDp <= 10) ? rrtDp : 4,
+      areaPctDp: (Number.isFinite(areaPctDp) && areaPctDp >= 0 && areaPctDp <= 10) ? areaPctDp : 3,
+      areaPctMode: areaPctMode,
+      subMode: subMode,
+      rtTolerance: rtTolerance,
+      negHandling: negHandling
+    };
+  }
+
+  // ============================================================
+  // BLANK SUBTRACTION
+  // ============================================================
+
+  function computeSubtractions(settings) {
+    var adjustments = new Map();
+    if (settings.subMode === 'none') return adjustments;
+
+    var blankMap = new Map();
+    getBlankFiles().forEach(function (f) { blankMap.set(f.id, f); });
+
+    getSampleFiles().forEach(function (sample) {
+      if (!sample.blankId) return;
+      var blank = blankMap.get(sample.blankId);
+      if (!blank || !blank.peaks.length) return;
+
+      var sAdj = new Map();
+
+      if (settings.subMode === 'mode1') {
+        var pairs = [];
+        for (var si = 0; si < sample.peaks.length; si++) {
+          for (var bi = 0; bi < blank.peaks.length; bi++) {
+            var dist = Math.abs(sample.peaks[si].rt - blank.peaks[bi].rt);
+            if (dist <= settings.rtTolerance) pairs.push({ si: si, bi: bi, dist: dist });
+          }
+        }
+        pairs.sort(function (a, b) { return a.dist - b.dist; });
+        var usedS = new Set(), usedB = new Set();
+        for (var k = 0; k < pairs.length; k++) {
+          if (usedS.has(pairs[k].si) || usedB.has(pairs[k].bi)) continue;
+          usedS.add(pairs[k].si);
+          usedB.add(pairs[k].bi);
+          sAdj.set(pairs[k].si, { blankArea: blank.peaks[pairs[k].bi].area });
+        }
+      } else if (settings.subMode === 'mode2') {
+        var sRef = sample.peaks.find(function (p) { return p.rt === sample.refRt; });
+        if (!sRef || sRef.rt === 0 || !blank.blankRefRt || blank.blankRefRt === 0) return;
+
+        var blankByGrp = new Map();
+        for (var bi = 0; bi < blank.peaks.length; bi++) {
+          var bRrt = blank.peaks[bi].rt / blank.blankRefRt;
+          var bKey = roundRRT(bRrt, settings.groupDp);
+          if (!blankByGrp.has(bKey)) blankByGrp.set(bKey, []);
+          blankByGrp.get(bKey).push({ idx: bi, rrt: bRrt });
+        }
+
+        var sampleByGrp = new Map();
+        for (var si = 0; si < sample.peaks.length; si++) {
+          var sRrt = sample.peaks[si].rt / sRef.rt;
+          var sKey = roundRRT(sRrt, settings.groupDp);
+          if (!sampleByGrp.has(sKey)) sampleByGrp.set(sKey, []);
+          sampleByGrp.get(sKey).push({ idx: si, rrt: sRrt });
+        }
+
+        sampleByGrp.forEach(function (sEntries, grp) {
+          var bEntries = blankByGrp.get(grp);
+          if (!bEntries || !bEntries.length) return;
+          var pairs = [];
+          for (var a = 0; a < sEntries.length; a++) {
+            for (var b = 0; b < bEntries.length; b++) {
+              pairs.push({ si: sEntries[a].idx, bi: bEntries[b].idx, dist: Math.abs(sEntries[a].rrt - bEntries[b].rrt) });
+            }
+          }
+          pairs.sort(function (a, b) { return a.dist - b.dist; });
+          var usedS = new Set(), usedB = new Set();
+          for (var k = 0; k < pairs.length; k++) {
+            if (usedS.has(pairs[k].si) || usedB.has(pairs[k].bi)) continue;
+            usedS.add(pairs[k].si);
+            usedB.add(pairs[k].bi);
+            sAdj.set(pairs[k].si, { blankArea: blank.peaks[pairs[k].bi].area });
+          }
+        });
+      }
+
+      if (sAdj.size > 0) adjustments.set(sample.id, sAdj);
+    });
+
+    return adjustments;
+  }
+
+  // ============================================================
+  // CORE COMPUTATION
+  // ============================================================
+
+  function computeGroupedRows(sampleList, settings, adjustments) {
+    lastRefWarnings = [];
+    var byRounded = new Map();
+
+    for (var fi = 0; fi < sampleList.length; fi++) {
+      var s = sampleList[fi];
+      var refPeak = s.peaks.find(function (p) { return p.rt === s.refRt; });
+      if (!refPeak || refPeak.rt === 0) continue;
+      var fileAdj = adjustments.get(s.id) || new Map();
+
+      // Compute corrected areas
+      var corrPeaks = [];
+      for (var pi = 0; pi < s.peaks.length; pi++) {
+        var p = s.peaks[pi];
+        var adj = fileAdj.get(pi);
+        var blankArea = adj ? adj.blankArea : 0;
+        corrPeaks.push({ rt: p.rt, area: p.area, corrected: p.area - blankArea, wasAdj: !!adj, isRef: p.rt === s.refRt });
+      }
+
+      // v4 fix: Area% denominators are computed from positive-corrected peaks
+      // only. Previously a negative (over-subtracted) corrected area, typically
+      // the reference peak under Mode 2 with a pure-solvent blank, drove these
+      // denominators <= 0 and forced every Area% value to blank.
+      var sumCorr = corrPeaks.reduce(function (a, cp) { return a + (cp.corrected > 0 ? cp.corrected : 0); }, 0);
+      var refCpObj = corrPeaks.find(function (cp) { return cp.isRef; });
+      var refCorr = (refCpObj && refCpObj.corrected > 0) ? refCpObj.corrected : 0;
+      if (refCpObj && refCpObj.corrected <= 0) {
+        lastRefWarnings.push(s.sampleName + (s.sampleId ? ' (' + s.sampleId + ')' : ''));
+      }
+
+      for (var ci = 0; ci < corrPeaks.length; ci++) {
+        var cp = corrPeaks[ci];
+        var rrt = cp.rt / refPeak.rt;
+        var rounded = roundRRT(rrt, settings.groupDp);
+        var pctTotal = sumCorr > 0 ? (cp.corrected / sumCorr) * 100 : NaN;
+        var pctRef = refCorr > 0 ? (cp.corrected / refCorr) * 100 : NaN;
+
+        if (!byRounded.has(rounded)) byRounded.set(rounded, []);
+        byRounded.get(rounded).push({
+          sampleId: s.id, rt: cp.rt, rrt: rrt, rounded: rounded,
+          correctedArea: cp.corrected, pctTotal: pctTotal, pctRef: pctRef,
+          isRef: cp.isRef, wasAdj: cp.wasAdj, isNeg: cp.corrected <= 0 && cp.wasAdj
+        });
+      }
+    }
+
+    var sortedKeys = Array.from(byRounded.keys()).sort(function (a, b) { return a - b; });
+    var groups = [];
+
+    for (var gi = 0; gi < sortedKeys.length; gi++) {
+      var g = sortedKeys[gi];
+      var list = byRounded.get(g) || [];
+
+      var perSample = new Map();
+      sampleList.forEach(function (s) { perSample.set(s.id, []); });
+      list.forEach(function (item) { var arr = perSample.get(item.sampleId); if (arr) arr.push(item); });
+
+      // Apply negative handling per sample
+      perSample.forEach(function (arr, sid) {
+        if (settings.negHandling === 'eliminate') {
+          perSample.set(sid, arr.filter(function (x) { return !x.isNeg; }));
+        } else {
+          var pos = arr.filter(function (x) { return !x.isNeg; }).sort(function (a, b) { return a.rrt - b.rrt; });
+          var neg = arr.filter(function (x) { return x.isNeg; }).sort(function (a, b) { return a.rrt - b.rrt; });
+          perSample.set(sid, pos.concat(neg));
+        }
+      });
+
+      var maxRows = 0;
+      sampleList.forEach(function (s) { var n = (perSample.get(s.id) || []).length; if (n > maxRows) maxRows = n; });
+      if (maxRows === 0) continue;
+
+      var cells = [], rowColors = [], rowHls = [];
+      var groupLabel = formatGroupLabel(g, settings.groupDp);
+
+      for (var r = 0; r < maxRows; r++) {
+        var rowCells = [r === 0 ? groupLabel : ''];
+        var rowClr = ['black'];
+        var rowHl = [false];
+
+        for (var si = 0; si < sampleList.length; si++) {
+          var smp = sampleList[si];
+          var arr = perSample.get(smp.id) || [];
+          var item = arr[r];
+          if (item) {
+            var clr = item.isNeg ? 'red' : (item.wasAdj ? 'blue' : 'black');
+            var rtDisp = fmtRaw(item.rt);
+            if (item.isRef) rtDisp += ' (Ref)';
+
+            // v4 column order: RRT, RT, Area, Area%...
+            var pc = [fmtFixed(item.rrt, settings.rrtDp), rtDisp, fmtRaw(item.correctedArea)];
+            var hl = [false, false, false];
+            var spec = (smp.specLimit != null && Number.isFinite(smp.specLimit)) ? smp.specLimit : null;
+            if (item.isNeg) {
+              if (settings.areaPctMode === 'both' || settings.areaPctMode === 'total') { pc.push(''); hl.push(false); }
+              if (settings.areaPctMode === 'both' || settings.areaPctMode === 'ref') { pc.push(''); hl.push(false); }
+            } else {
+              if (settings.areaPctMode === 'both' || settings.areaPctMode === 'total') {
+                pc.push(fmtFixed(item.pctTotal, settings.areaPctDp));
+                hl.push(spec != null && !item.isRef && Number.isFinite(item.pctTotal) && item.pctTotal > spec);
+              }
+              if (settings.areaPctMode === 'both' || settings.areaPctMode === 'ref') {
+                pc.push(fmtFixed(item.pctRef, settings.areaPctDp));
+                // Spec flag rides the vs-Ref column only when Total is not shown.
+                hl.push(settings.areaPctMode === 'ref' && spec != null && !item.isRef && Number.isFinite(item.pctRef) && item.pctRef > spec);
+              }
+            }
+            rowCells.push.apply(rowCells, pc);
+            for (var c = 0; c < pc.length; c++) { rowClr.push(clr); rowHl.push(hl[c]); }
+          } else {
+            var nC = getColLabels(settings.areaPctMode).length;
+            for (var c = 0; c < nC; c++) { rowCells.push(''); rowClr.push('black'); rowHl.push(false); }
+          }
+        }
+        cells.push(rowCells);
+        rowColors.push(rowClr);
+        rowHls.push(rowHl);
+      }
+      if (cells.length > 0) groups.push({ group: g, cells: cells, rowColors: rowColors, rowHighlights: rowHls });
+    }
+    return groups;
+  }
+
+  // ============================================================
+  // UI RENDERING
+  // ============================================================
+
+  function updateFileCount() {
+    var el = document.getElementById('fileCount');
+    var nS = getSampleFiles().length, nB = getBlankFiles().length, total = files.length;
+    if (total === 0) el.textContent = 'No files loaded';
+    else if (nB === 0) el.textContent = total + ' file' + (total > 1 ? 's' : '') + ' loaded';
+    else el.textContent = total + ' file' + (total > 1 ? 's' : '') + ' loaded (' + nS + ' sample' + (nS !== 1 ? 's' : '') + ', ' + nB + ' blank' + (nB !== 1 ? 's' : '') + ')';
+  }
+
+  function renderAll() {
+    renderFileCards();
+    renderRefInputs();
+    renderSubtractionUI();
+    updateFileCount();
+  }
+
+  function moveSample(f, dir) {
+    var idx = files.indexOf(f);
+    if (idx < 0) return;
+    var j = idx + dir;
+    // Step over blanks so reordering acts on sample position only.
+    while (j >= 0 && j < files.length && files[j].role !== 'sample') j += dir;
+    if (j < 0 || j >= files.length) return;
+    var tmp = files[idx]; files[idx] = files[j]; files[j] = tmp;
+    renderAll();
+  }
+
+  function renderFileCards() {
+    var el = document.getElementById('filesContainer');
+    el.innerHTML = '';
+    for (var fi = 0; fi < files.length; fi++) {
+      (function (f) {
+        var card = document.createElement('div');
+        card.className = 'sample-card' + (f.role === 'blank' ? ' blank-card' : '');
+
+        var head = document.createElement('div');
+        head.style.display = 'flex';
+        head.style.flexWrap = 'wrap';
+        head.style.alignItems = 'center';
+        head.style.gap = '0.4rem';
+        head.style.marginBottom = '0.5rem';
+
+        var nameInp = document.createElement('input');
+        nameInp.type = 'text'; nameInp.value = f.sampleName; nameInp.title = 'Sample name (editable)';
+        nameInp.style.minWidth = '14rem'; nameInp.style.fontWeight = '500';
+        nameInp.addEventListener('change', function () {
+          f.sampleName = nameInp.value.trim() || 'Unknown';
+          renderRefInputs(); renderSubtractionUI();
+        });
+
+        var idLab = document.createElement('span'); idLab.textContent = 'ID:'; idLab.className = 'muted';
+        var idInp = document.createElement('input');
+        idInp.type = 'text'; idInp.value = f.sampleId; idInp.title = 'Sample ID (editable)';
+        idInp.placeholder = '(none)'; idInp.style.width = '8rem';
+        idInp.addEventListener('change', function () {
+          f.sampleId = idInp.value.trim();
+          renderRefInputs(); renderSubtractionUI();
+        });
+
+        var ptLab = document.createElement('span'); ptLab.textContent = 'Peak Table'; ptLab.className = 'muted';
+
+        var roleSel = document.createElement('select');
+        roleSel.className = 'role-select';
+        var optS = document.createElement('option'); optS.value = 'sample'; optS.textContent = 'Sample';
+        var optB = document.createElement('option'); optB.value = 'blank'; optB.textContent = 'Blank';
+        roleSel.appendChild(optS); roleSel.appendChild(optB);
+        roleSel.value = f.role;
+        roleSel.addEventListener('change', function (e) {
+          f.role = e.target.value;
+          if (f.role === 'blank') { f.refRt = null; f.blankId = null; }
+          else { f.refRt = defaultRefRt(f.peaks); f.blankRefRt = null; f.blankId = null; }
+          files.forEach(function (sf) {
+            if (sf.blankId && !files.some(function (bf) { return bf.id === sf.blankId && bf.role === 'blank'; })) sf.blankId = null;
+          });
+          renderAll();
+        });
+
+        head.appendChild(nameInp);
+        head.appendChild(idLab);
+        head.appendChild(idInp);
+        head.appendChild(ptLab);
+        head.appendChild(roleSel);
+
+        // Reorder controls (samples only); order sets the output column order.
+        if (f.role === 'sample') {
+          var smpOrder = getSampleFiles();
+          var pos = smpOrder.indexOf(f);
+          var up = document.createElement('button'); up.type = 'button'; up.textContent = '\u2191'; up.title = 'Move sample left/up';
+          up.disabled = (pos <= 0);
+          up.addEventListener('click', function () { moveSample(f, -1); });
+          var dn = document.createElement('button'); dn.type = 'button'; dn.textContent = '\u2193'; dn.title = 'Move sample right/down';
+          dn.disabled = (pos >= smpOrder.length - 1);
+          dn.addEventListener('click', function () { moveSample(f, 1); });
+          head.appendChild(up);
+          head.appendChild(dn);
+        }
+
+        var rm = document.createElement('button'); rm.type = 'button'; rm.textContent = 'Remove'; rm.className = 'danger';
+        rm.addEventListener('click', function () {
+          files = files.filter(function (x) { return x.id !== f.id; });
+          files.forEach(function (sf) { if (sf.blankId === f.id) sf.blankId = null; });
+          renderAll();
+        });
+        head.appendChild(rm);
+        card.appendChild(head);
+
+        var tbl = document.createElement('table'); tbl.className = 'data';
+        tbl.innerHTML = '<thead><tr><th>Peak#</th><th>R.Time (min)</th><th>Area</th></tr></thead><tbody></tbody>';
+        var tb = tbl.querySelector('tbody');
+        for (var pi = 0; pi < f.peaks.length; pi++) {
+          var p = f.peaks[pi];
+          var tr = document.createElement('tr');
+          tr.innerHTML = '<td>' + p.peakNum + '</td><td>' + p.rt.toFixed(3) + '</td><td>' + formatAreaLocale(p.area) + '</td>';
+          tb.appendChild(tr);
+        }
+        card.appendChild(tbl);
+        el.appendChild(card);
+      })(files[fi]);
+    }
+  }
+
+  function renderRefInputs() {
+    var refEl = document.getElementById('refContainer');
+    refEl.innerHTML = '';
+    var smpFiles = getSampleFiles();
+    if (!smpFiles.length) { refEl.innerHTML = '<p class="muted">No sample files loaded.</p>'; return; }
+
+    for (var si = 0; si < smpFiles.length; si++) {
+      (function (s) {
+        var row = document.createElement('div'); row.className = 'sample-card';
+
+        var lab = document.createElement('label');
+        lab.textContent = s.sampleName + (s.sampleId ? ' (' + s.sampleId + ')' : '') + ' reference peak: ';
+
+        var sel = document.createElement('select');
+        // Largest-area peak is the default; ensure refRt is set even if null.
+        if (s.refRt == null) s.refRt = defaultRefRt(s.peaks);
+        var sorted = s.peaks.slice();
+        for (var pi = 0; pi < sorted.length; pi++) {
+          var p = sorted[pi];
+          var opt = document.createElement('option');
+          opt.value = String(p.rt);
+          opt.textContent = 'Peak ' + p.peakNum + ' | RT ' + p.rt.toFixed(3) + ' | Area ' + formatAreaLocale(p.area);
+          if (p.rt === s.refRt) opt.selected = true;
+          sel.appendChild(opt);
+        }
+        sel.addEventListener('change', function () {
+          var val = parseFloat(sel.value);
+          if (Number.isFinite(val)) s.refRt = val;
+        });
+
+        var specLab = document.createElement('label');
+        specLab.textContent = '  spec Area% (optional): ';
+        specLab.style.marginLeft = '0.75rem';
+        var specInp = document.createElement('input');
+        specInp.type = 'number'; specInp.min = '0'; specInp.step = '0.01';
+        specInp.style.width = '5rem'; specInp.placeholder = 'none';
+        specInp.value = (s.specLimit != null && Number.isFinite(s.specLimit)) ? String(s.specLimit) : '';
+        specInp.title = 'Peaks whose Area% exceeds this value are flagged in yellow. Leave blank for no limit.';
+        specInp.addEventListener('change', function () {
+          var v = parseFloat(specInp.value);
+          s.specLimit = (Number.isFinite(v) && v >= 0) ? v : null;
+          if (specInp.value.trim() === '') s.specLimit = null;
+        });
+
+        row.appendChild(lab); row.appendChild(sel);
+        row.appendChild(specLab); row.appendChild(specInp);
+        refEl.appendChild(row);
+      })(smpFiles[si]);
+    }
+  }
+
+  function renderSubtractionUI() {
+    var container = document.getElementById('subSettingsContainer');
+    container.innerHTML = '';
+    var mode = document.getElementById('subMode').value;
+    if (mode === 'none') return;
+
+    var blanks = getBlankFiles(), smpFiles = getSampleFiles();
+    var settDiv = document.createElement('div'); settDiv.className = 'sub-section';
+
+    // Mode 1: tolerance input
+    if (mode === 'mode1') {
+      var tolRow = document.createElement('div'); tolRow.className = 'control-row';
+      var tolGrp = document.createElement('div'); tolGrp.className = 'control-group';
+      var tolLab = document.createElement('label'); tolLab.textContent = 'RT tolerance (min):'; tolLab.htmlFor = 'rtTolerance';
+      var tolInp = document.createElement('input'); tolInp.type = 'number'; tolInp.id = 'rtTolerance';
+      tolInp.step = '0.001'; tolInp.min = '0'; tolInp.value = '0.010'; tolInp.style.width = '5rem';
+      tolGrp.appendChild(tolLab); tolGrp.appendChild(tolInp); tolRow.appendChild(tolGrp);
+      settDiv.appendChild(tolRow);
+    }
+
+    // Mode 2: blank reference RT inputs
+    if (mode === 'mode2') {
+      var bRefTitle = document.createElement('h4'); bRefTitle.textContent = 'Blank reference RT (for RRT calculation)';
+      settDiv.appendChild(bRefTitle);
+      if (!blanks.length) {
+        var msg = document.createElement('p'); msg.className = 'muted';
+        msg.textContent = 'No files tagged as Blank. Tag a file in Step 1.'; settDiv.appendChild(msg);
+      } else {
+        for (var bi = 0; bi < blanks.length; bi++) {
+          (function (b) {
+            var bRow = document.createElement('div'); bRow.className = 'sample-card blank-card';
+            var bLab = document.createElement('label');
+            bLab.textContent = b.sampleName + (b.sampleId ? ' (' + b.sampleId + ')' : '') + ' — reference RT: ';
+            var bInp = document.createElement('input'); bInp.type = 'text'; bInp.className = 'ref-input';
+            bInp.value = b.blankRefRt != null ? b.blankRefRt.toFixed(3) : ''; bInp.placeholder = 'e.g. 8.555';
+            bInp.addEventListener('change', function () {
+              var val = parseFloat(bInp.value);
+              b.blankRefRt = (Number.isFinite(val) && val !== 0) ? val : null;
+            });
+            bRow.appendChild(bLab); bRow.appendChild(bInp); settDiv.appendChild(bRow);
+          })(blanks[bi]);
+        }
+      }
+    }
+
+    // Negative handling
+    var negRow = document.createElement('div'); negRow.className = 'control-row'; negRow.style.marginTop = '0.5rem';
+    var negGrp = document.createElement('div'); negGrp.className = 'control-group';
+    var negLab = document.createElement('label'); negLab.textContent = 'Negative/zero corrected area:'; negLab.htmlFor = 'negHandling';
+    var negSel = document.createElement('select'); negSel.id = 'negHandling';
+    var oElim = document.createElement('option'); oElim.value = 'eliminate'; oElim.textContent = 'Eliminate from results';
+    var oShow = document.createElement('option'); oShow.value = 'show'; oShow.textContent = 'Show after positives (red)';
+    negSel.appendChild(oElim); negSel.appendChild(oShow);
+    negGrp.appendChild(negLab); negGrp.appendChild(negSel); negRow.appendChild(negGrp);
+    settDiv.appendChild(negRow);
+    container.appendChild(settDiv);
+
+    // Blank assignment
+    var assignDiv = document.createElement('div'); assignDiv.className = 'sub-section';
+    var assignTitle = document.createElement('h4'); assignTitle.textContent = 'Blank assignment';
+    assignDiv.appendChild(assignTitle);
+
+    if (!blanks.length) {
+      var msg = document.createElement('p'); msg.className = 'muted';
+      msg.textContent = 'No files tagged as Blank. Tag a file in Step 1.'; assignDiv.appendChild(msg);
+    } else {
+      // Apply-to-all buttons
+      for (var bi = 0; bi < blanks.length; bi++) {
+        (function (b) {
+          var btn = document.createElement('button'); btn.type = 'button';
+          btn.textContent = 'Apply "' + b.sampleName + (b.sampleId ? ' (' + b.sampleId + ')' : '') + '" to all samples';
+          btn.addEventListener('click', function () {
+            getSampleFiles().forEach(function (sf) { sf.blankId = b.id; });
+            renderSubtractionUI();
+          });
+          assignDiv.appendChild(btn);
+        })(blanks[bi]);
+      }
+
+      if (!smpFiles.length) {
+        var msg = document.createElement('p'); msg.className = 'muted'; msg.textContent = 'No sample files.';
+        assignDiv.appendChild(msg);
+      } else {
+        for (var si = 0; si < smpFiles.length; si++) {
+          (function (s) {
+            var aRow = document.createElement('div'); aRow.className = 'sample-card';
+            var aLab = document.createElement('label');
+            aLab.textContent = s.sampleName + (s.sampleId ? ' (' + s.sampleId + ')' : '') + ' — blank: ';
+            var aSel = document.createElement('select');
+            var optNone = document.createElement('option'); optNone.value = ''; optNone.textContent = 'None';
+            aSel.appendChild(optNone);
+            for (var bk = 0; bk < blanks.length; bk++) {
+              var blk = blanks[bk];
+              var opt = document.createElement('option'); opt.value = blk.id;
+              opt.textContent = blk.sampleName + (blk.sampleId ? ' (' + blk.sampleId + ')' : '');
+              aSel.appendChild(opt);
+            }
+            aSel.value = s.blankId || '';
+            aSel.addEventListener('change', function () { s.blankId = aSel.value || null; });
+            aRow.appendChild(aLab); aRow.appendChild(aSel); assignDiv.appendChild(aRow);
+          })(smpFiles[si]);
+        }
+      }
+    }
+    container.appendChild(assignDiv);
+  }
+
+  function buildResultTable(groups, sampleList, settings) {
+    var table = document.getElementById('resultTable');
+    table.innerHTML = '';
+    var colLabels = getColLabels(settings.areaPctMode);
+    var colsPerSample = colLabels.length;
+    var thead = document.createElement('thead');
+
+    // Row 1: Sample Names
+    var hr1 = document.createElement('tr');
+    hr1.appendChild(Object.assign(document.createElement('th'), { textContent: '' }));
+    sampleList.forEach(function (s) {
+      for (var c = 0; c < colsPerSample; c++) hr1.appendChild(Object.assign(document.createElement('th'), { textContent: s.sampleName }));
+    });
+    thead.appendChild(hr1);
+
+    // Row 2: Sample IDs
+    var hr2 = document.createElement('tr');
+    hr2.appendChild(Object.assign(document.createElement('th'), { textContent: '' }));
+    sampleList.forEach(function (s) {
+      for (var c = 0; c < colsPerSample; c++) hr2.appendChild(Object.assign(document.createElement('th'), { textContent: s.sampleId }));
+    });
+    thead.appendChild(hr2);
+
+    // Row 3: Column labels
+    var hr3 = document.createElement('tr');
+    hr3.appendChild(Object.assign(document.createElement('th'), { textContent: 'RRT Group' }));
+    sampleList.forEach(function () {
+      colLabels.forEach(function (L) { hr3.appendChild(Object.assign(document.createElement('th'), { textContent: L })); });
+    });
+    thead.appendChild(hr3);
+    table.appendChild(thead);
+
+    // Data rows
+    var tbody = document.createElement('tbody');
+    for (var gi = 0; gi < groups.length; gi++) {
+      var grp = groups[gi];
+      for (var ri = 0; ri < grp.cells.length; ri++) {
+        var tr = document.createElement('tr');
+        if (ri === 0) tr.className = 'rrt-group-start';
+        var clrs = grp.rowColors[ri];
+        var hasRed = clrs.some(function (c) { return c === 'red'; });
+        var hasBlue = clrs.some(function (c) { return c === 'blue'; });
+        if (hasRed) tr.classList.add('row-red');
+        else if (hasBlue) tr.classList.add('row-blue');
+        var row = grp.cells[ri];
+        var hls = (grp.rowHighlights && grp.rowHighlights[ri]) || [];
+        for (var c = 0; c < row.length; c++) {
+          var td = document.createElement('td');
+          td.textContent = (row[c] === '' || row[c] == null) ? '' : String(row[c]);
+          if (hls[c]) td.classList.add('spec-exceed');
+          tr.appendChild(td);
+        }
+        tbody.appendChild(tr);
+      }
+    }
+    table.appendChild(tbody);
+  }
+
+  // ============================================================
+  // CALCULATION
+  // ============================================================
+
+  var lastGroups = null, lastSettings = null, lastRefWarnings = [];
+
+  function runCalculation() {
+    var err = document.getElementById('runError');
+    err.hidden = true;
+    var sampleList = getSampleFiles();
+    if (!sampleList.length) { err.textContent = 'Load at least one sample file.'; err.hidden = false; return; }
+
+    for (var i = 0; i < sampleList.length; i++) {
+      var s = sampleList[i];
+      if (!s.peaks.length) { err.textContent = 'Sample "' + s.sampleName + '" has no peaks.'; err.hidden = false; return; }
+      if (s.refRt == null) { err.textContent = 'Enter a valid reference RT for "' + s.sampleName + '".'; err.hidden = false; return; }
+      if (!s.peaks.some(function (p) { return p.rt === s.refRt; })) { err.textContent = 'RT not found for "' + s.sampleName + '".'; err.hidden = false; return; }
+      if (s.refRt === 0) { err.textContent = 'Reference RT is zero for "' + s.sampleName + '".'; err.hidden = false; return; }
+    }
+
+    var settings = getSettings();
+
+    if (settings.subMode === 'mode1' && settings.rtTolerance <= 0) {
+      err.textContent = 'Enter a positive RT tolerance for Mode 1.'; err.hidden = false; return;
+    }
+    if (settings.subMode === 'mode2') {
+      var assignedIds = new Set();
+      sampleList.forEach(function (s) { if (s.blankId) assignedIds.add(s.blankId); });
+      var blanks = getBlankFiles();
+      for (var i = 0; i < blanks.length; i++) {
+        if (assignedIds.has(blanks[i].id) && (!blanks[i].blankRefRt || blanks[i].blankRefRt === 0)) {
+          err.textContent = 'Enter reference RT for blank "' + blanks[i].sampleName + '" (required for Mode 2).';
+          err.hidden = false; return;
+        }
+      }
+    }
+
+    var adjustments = computeSubtractions(settings);
+    lastSettings = settings;
+    lastGroups = computeGroupedRows(sampleList, settings, adjustments);
+    buildResultTable(lastGroups, sampleList, settings);
+
+    var warnEl = document.getElementById('refWarn');
+    if (lastRefWarnings.length) {
+      warnEl.textContent = 'Warning: corrected reference area is zero or negative after blank subtraction for: '
+        + lastRefWarnings.join('; ') + '. Area% vs Ref is blank for these samples. This usually means the blank'
+        + ' was over-subtracted on the reference peak (for a pure-solvent blank, try Mode 1 RT matching).';
+      warnEl.hidden = false;
+    } else {
+      warnEl.hidden = true;
+    }
+
+    document.getElementById('resultsSection').hidden = false;
+  }
+
+  // ============================================================
+  // EXPORT
+  // ============================================================
+
+  function nowSgtString() {
+    // GMT+8 (SGT), computed from UTC so it is correct regardless of machine timezone.
+    return new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 19).replace('T', ' ');
+  }
+
+  function buildExportRows(sampleList, groups, settings, highlightSink) {
+    var colLabels = getColLabels(settings.areaPctMode);
+    var rows = [];
+    var r1 = [''], r2 = [''], r3 = ['RRT Group'];
+    sampleList.forEach(function (s) {
+      colLabels.forEach(function () { r1.push(s.sampleName); r2.push(s.sampleId); });
+      r3.push.apply(r3, colLabels);
+    });
+    rows.push(r1, r2, r3);
+    for (var gi = 0; gi < groups.length; gi++) {
+      var grp = groups[gi];
+      for (var ri = 0; ri < grp.cells.length; ri++) {
+        var rowIndex = rows.length;
+        rows.push(grp.cells[ri].map(function (v) { return v == null ? '' : v; }));
+        if (highlightSink && grp.rowHighlights && grp.rowHighlights[ri]) {
+          var hl = grp.rowHighlights[ri];
+          for (var c = 0; c < hl.length; c++) { if (hl[c]) highlightSink.push([rowIndex, c]); }
+        }
+      }
+    }
+    rows.push([]);
+    rows.push(['Generated by Reflux, Impurity Profile | \u00A9 Gary Chan | ' + nowSgtString() + ' (GMT+8)']);
+    return rows;
+  }
+
+  function escapeCell(v, sep) {
+    if (v === '' || v == null) return '';
+    var s = String(v);
+    if (/["\r\n]/.test(s) || s.includes('"') || (sep === ',' && s.includes(',')) || (sep === '\t' && s.includes('\t')))
+      return '"' + s.replace(/"/g, '""') + '"';
+    return s;
+  }
+
+  function exportFilename(ext) {
+    var d = new Date();
+    var n = getSampleFiles().length;
+    return 'RRT_results_' + n + 'samples_' + d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') + '.' + ext;
+  }
+
+  function exportDelim(sep) {
+    if (!lastGroups || !lastSettings) return;
+    var sampleList = getSampleFiles(); if (!sampleList.length) return;
+    var allRows = buildExportRows(sampleList, lastGroups, lastSettings);
+    var text = allRows.map(function (r) { return r.map(function (v) { return escapeCell(v, sep); }).join(sep); }).join('\r\n');
+    var blob = new Blob(['\uFEFF' + text], { type: 'text/plain;charset=utf-8' });
+    var a = document.createElement('a');
+    a.download = exportFilename(sep === '\t' ? 'tsv' : 'csv');
+    a.href = URL.createObjectURL(blob); a.click(); URL.revokeObjectURL(a.href);
+  }
+
+  function copyTableTsv() {
+    var status = document.getElementById('copyStatus');
+    if (!lastGroups || !lastSettings) { return; }
+    var sampleList = getSampleFiles(); if (!sampleList.length) return;
+    var allRows = buildExportRows(sampleList, lastGroups, lastSettings);
+    var text = allRows.map(function (r) { return r.map(function (v) { return escapeCell(v, '\t'); }).join('\t'); }).join('\r\n');
+    function ok() { if (status) { status.textContent = 'Copied. Paste into Excel or Sheets.'; setTimeout(function () { status.textContent = ''; }, 4000); } }
+    function fail() {
+      // Fallback for older browsers / non-secure contexts.
+      try {
+        var ta = document.createElement('textarea'); ta.value = text;
+        ta.style.position = 'fixed'; ta.style.opacity = '0'; document.body.appendChild(ta);
+        ta.select(); document.execCommand('copy'); document.body.removeChild(ta); ok();
+      } catch (e) { if (status) status.textContent = 'Copy failed; use Export TSV instead.'; }
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(ok, fail);
+    } else { fail(); }
+  }
+
+  function exportXlsx() {
+    if (!lastGroups || !lastSettings) return;
+    var sampleList = getSampleFiles(); if (!sampleList.length) return;
+    if (typeof ExcelJS === 'undefined') { alert('ExcelJS not loaded (check network).'); return; }
+
+    var highlights = [];
+    var allRows = buildExportRows(sampleList, lastGroups, lastSettings, highlights);
+    var colLabels = getColLabels(lastSettings.areaPctMode);
+    var totalCols = 1 + sampleList.length * colLabels.length;
+
+    var wb = new ExcelJS.Workbook();
+    var ws = wb.addWorksheet('RRT Results');
+    allRows.forEach(function (r) { ws.addRow(r); });
+
+    for (var i = 1; i <= totalCols; i++) { ws.getColumn(i).width = (i === 1) ? 12 : 15; }
+
+    // Header rows 1-3: wrap long sample names, top-align; bold the label row.
+    for (var hr = 1; hr <= 3; hr++) {
+      ws.getRow(hr).eachCell({ includeEmpty: true }, function (cell) {
+        cell.alignment = { wrapText: true, vertical: 'top', horizontal: (hr === 3 ? 'right' : 'left') };
+        if (hr === 3) cell.font = { bold: true };
+      });
+      ws.getRow(hr).height = (hr === 1 ? 42 : 18);
+    }
+
+    // Spec-limit exceedances: yellow Area% cells (rows/cols are 0-based in allRows).
+    highlights.forEach(function (h) {
+      var cell = ws.getRow(h[0] + 1).getCell(h[1] + 1);
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFD54A' } };
+      cell.font = { color: { argb: 'FF1A1A1A' }, bold: true };
+    });
+
+    wb.xlsx.writeBuffer().then(function (buf) {
+      var blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      var a = document.createElement('a');
+      a.download = exportFilename('xlsx');
+      a.href = URL.createObjectURL(blob); a.click(); URL.revokeObjectURL(a.href);
+    }).catch(function (e) { alert('XLSX export failed: ' + (e && e.message ? e.message : e)); });
+  }
+
+  // ============================================================
+  // EVENT LISTENERS
+  // ============================================================
+
+  document.getElementById('chooseFilesBtn').addEventListener('click', function () { document.getElementById('fileInput').click(); });
+
+  document.getElementById('fileInput').addEventListener('change', async function (e) {
+    var input = e.target;
+    if (!input.files || !input.files.length) return;
+    var parseErr = document.getElementById('parseError');
+    parseErr.hidden = true;
+    var msgs = [];
+    for (var i = 0; i < input.files.length; i++) {
+      try {
+        var text = await input.files[i].text();
+        var r = parseFile(text);
+        msgs.push.apply(msgs, r.warnings.map(function (w) { return input.files[i].name + ': ' + w; }));
+        files.push({
+          id: uid(), sampleName: r.sampleName, sampleId: r.sampleId,
+          origName: r.sampleName, origId: r.sampleId,
+          peaks: r.peaks, role: 'sample', refRt: defaultRefRt(r.peaks),
+          blankId: null, blankRefRt: null, specLimit: null
+        });
+      } catch (err) { msgs.push(input.files[i].name + ': ' + (err.message || String(err))); }
+    }
+    input.value = '';
+    if (msgs.length) { parseErr.textContent = msgs.join('\n'); parseErr.hidden = false; }
+    renderAll();
+  });
+
+  document.getElementById('clearAll').addEventListener('click', function () {
+    files = []; lastGroups = null; lastSettings = null; lastRefWarnings = [];
+    document.getElementById('resultsSection').hidden = true;
+    document.getElementById('parseError').hidden = true;
+    var rw = document.getElementById('refWarn'); if (rw) rw.hidden = true;
+    var cs = document.getElementById('copyStatus'); if (cs) cs.textContent = '';
+    renderAll();
+  });
+
+  document.getElementById('subMode').addEventListener('change', renderSubtractionUI);
+  document.getElementById('runBtn').addEventListener('click', runCalculation);
+  document.getElementById('exportCsv').addEventListener('click', function () { exportDelim(','); });
+  document.getElementById('exportTsv').addEventListener('click', function () { exportDelim('\t'); });
+  document.getElementById('exportXlsx').addEventListener('click', exportXlsx);
+  document.getElementById('copyTsv').addEventListener('click', copyTableTsv);
+
+  // ============================================================
+  // THEME + BUG REPORT
+  // ============================================================
+
+  (function () {
+    var subject = 'Reflux Bug Report (Impurity Profile)';
+    var body = [
+      'IMPORTANT: Please attach BOTH your original input file(s) AND the exported output file to this email.',
+      'Bug reports without files cannot be investigated.',
+      '',
+      'Description of issue:',
+      '',
+      '',
+      'Steps to reproduce:',
+      '',
+      '',
+      'Reflux version: v1 (Impurity Profile)'
+    ].join('\n');
+    var link = document.getElementById('bugReport');
+    if (link) link.href = 'mailto:jeuron@gmail.com?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
+  })();
+
+  renderAll();
+})();
+  </script>
+
+</body>
+</html>
