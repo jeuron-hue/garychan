@@ -569,12 +569,6 @@
       background: var(--chem-surface);
       border-color: var(--chem-surface-border);
     }
-#panel-chem #chem-composer-host .K-Chem-Composer {
-      width: 100% !important;
-      height: 100% !important;
-      border: none;
-      border-radius: 8px;
-    }
 #panel-chem .chem-export-area {
       position: absolute;
       left: -100000px;
@@ -2837,11 +2831,77 @@ try{const t=document.documentElement.getAttribute('data-theme');if(t==='light'){
       composer.setEnableCreateNewDoc(true);
       composer.setEnableLoadNewFile(false);
       editor = composer.getEditor();
+      fitZoomWhenSettled();
       setStatus('Ready \u2014 draw a structure or drop a template, then press <b>Copy image</b>.');
     } catch(e){
       composer = null; editor = null;
       setStatus('The structure editor could not start: ' + e.message, 'warn');
     }
+  }
+
+  // The engine draws a fixed 900x1500 sheet and defaults to 1.5x zoom, so the
+  // drawing surface came out 1350px wide on every screen. Even a desktop panel
+  // is only 1289px, so it panned horizontally there too; a phone client is about
+  // 300px, which left a 22% window onto the sheet. Fit the zoom to the width
+  // actually available, with a floor so a phone stays legible rather than
+  // fitting the whole sheet at a scale nothing can be drawn at - the toolbar
+  // keeps zoomIn and zoomOut for the rest. Done once at boot on an empty canvas,
+  // so it can neither override a zoom the user picked nor scroll a structure
+  // they have already drawn out of view.
+  var lastFitZoom = null, clientObserver = null;
+  // The width to fit is the editor's scrolling viewport. Read it off the element
+  // rather than from getClientDimension(), which is a value the engine caches and
+  // refreshes on its own schedule - it was still reporting the previous tab's
+  // 303px more than a second after the panel had been laid out at 1289.
+  function editorViewportWidth(){
+    var view = document.querySelector('#chem-composer-host .K-Chem-Editor');
+    return view ? view.clientWidth : 0;
+  }
+  function fitZoomToClient(){
+    try {
+      if (!editor || !editor.setZoom || !editor.getCurrZoom) return;
+      // Anything other than the zoom we last set means the user moved it. Leave
+      // it alone from then on rather than snapping their view back.
+      if (lastFitZoom !== null && Math.abs(editor.getCurrZoom() - lastFitZoom) > 0.001) return;
+      var space = editor.getChemSpace && editor.getChemSpace();
+      var sheet = space && space.getScreenSize ? space.getScreenSize().x : 0;
+      var avail = editorViewportWidth();
+      if (!sheet || !avail) return;
+      var z = Math.max(0.6, Math.min(1.5, avail / sheet));
+      if (Math.abs(z - editor.getCurrZoom()) < 0.005) return;   // already there
+      editor.setZoom(z);
+      lastFitZoom = z;
+    } catch(e){ /* engine variance: keep the default zoom rather than break the tab */ }
+  }
+
+  // The engine reaches its final client width long after the tab is shown, and it
+  // holds an intermediate width steady in the meantime - in a headless browser it
+  // sat at the previous tab's 303px for over 1.7s. So no delay and no
+  // wait-until-it-stops-changing is safe. Watch the element whose width defines
+  // the client and refit whenever it genuinely changes. Zoom resizes the drawing
+  // surface inside this element, not the element itself, and fitZoomToClient
+  // returns early when the zoom it would set is the one already in force, so this
+  // cannot feed back on itself.
+  function fitZoomWhenSettled(){
+    // The engine finishes laying the editor out well after the tab is shown, so a
+    // single measurement is never enough: taken at boot the viewport is not there
+    // yet, and the observer's first callback can arrive while the editor is still
+    // starting. Retry across the first few seconds and keep the observer for a
+    // change that lands later still, such as an orientation flip. fitZoomToClient
+    // returns early once the zoom is already right, so the extra calls are free.
+    [0, 60, 200, 500, 900, 1500, 2500].forEach(function(ms){ setTimeout(fitZoomToClient, ms); });
+    if (typeof ResizeObserver !== 'function') return;
+    (function attach(tries){
+      var view = document.querySelector('#chem-composer-host .K-Chem-Editor');
+      if (view) {
+        // Kept in a variable on purpose: an observer nothing holds a reference to
+        // can be collected, and the refits then stop with nothing to show for it.
+        clientObserver = new ResizeObserver(function(){ fitZoomToClient(); });
+        clientObserver.observe(view);
+        return;
+      }
+      if (tries < 40) setTimeout(function(){ attach(tries + 1); }, 50);
+    })(0);
   }
 
   // Boot on first activation, however the tab is reached: a click on the tab

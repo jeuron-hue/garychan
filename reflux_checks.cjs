@@ -143,6 +143,26 @@ chk(/\.field\{[^}]*max-width:240px/.test(s),'field width capped so numeric input
 chk(/\.field:has\(\.eq-input\),\.field:has\(\.title-input\)\{max-width:none;\}/.test(s),'free-text fields opt out of the field cap');
 chk(/if\(ab\.scrollIntoView\)try\{ab\.scrollIntoView\(/.test(app),'tab switch scrolls the active tab into view, guarded');
 
+// The structure editor draws a fixed 900x1500 sheet and the engine defaults to
+// 1.5x, which rendered it 1350px wide on every screen - wider than even a
+// desktop panel. What the size actually comes out as is a runtime question only
+// view.cjs can answer; these just pin the mechanism.
+chk(/function fitZoomToClient\(\)/.test(app),'structure editor fits its zoom to the client width');
+chk(/function fitZoomWhenSettled\(\)/.test(app) && /new ResizeObserver\(function\(\)\{ fitZoomToClient\(\); \}\)/.test(app),
+    'zoom refits when the client actually resizes, not after a guessed delay');
+chk(/Math\.abs\(z - editor\.getCurrZoom\(\)\) < 0\.005\) return;/.test(app),
+    'zoom fit is a no-op when already correct, so the observer cannot feed back');
+chk(/function editorViewportWidth\(\)/.test(app) && /view\.clientWidth/.test(app),
+    'zoom fit measures the viewport element, not the engine cached dimension');
+chk(/\[0, 60, 200, 500, 900, 1500, 2500\]/.test(app),
+    'zoom fit retried across the first seconds, since one measurement is too early');
+chk(/Math\.abs\(editor\.getCurrZoom\(\) - lastFitZoom\) > 0\.001\) return;/.test(app),
+    'zoom fit stands down once the user has changed the zoom themselves');
+chk(/Math\.max\(0\.6,\s*Math\.min\(1\.5,/.test(app),
+    'zoom fit clamped between a legible floor and the engine default');
+chk(!/#chem-composer-host \.K-Chem-Composer/.test(s),
+    'no dead composer rule (the engine puts that class on the host, not a child)');
+
 // 7. profiler CSS fully scoped, no leakage
 const css=app.match(/IMPURITY PROFILE \(scoped\) ={4,} \*\/\n([\s\S]*?)\n<\/style>/)[1];
 const sels=[...css.matchAll(/^([^{}\n]+)\{/gm)].map(m=>m[1].trim());

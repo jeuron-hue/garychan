@@ -17,7 +17,8 @@ open('mut.html','w',encoding='utf-8',newline='').write(s.replace(old,new,1))"
   if node "$4" mut.html >/dev/null 2>&1; then echo "NOT CAUGHT  $1  <-- checker gap"; fail=$((fail+1));
   else echo "caught      $1"; pass=$((pass+1)); fi
 }
-runsplash(){ # name, old, new -- mutates index.html, checks against the real SRC
+runsplash(){ # name, old, new, [suite] -- mutates index.html, checks against the real SRC
+  suite="${4:-reflux_checks.cjs}"
   [ -f index.html ] || { echo "STALE       $1  <-- index.html missing"; stale=$((stale+1)); return; }
   cp index.html .idx.bak
   python3 -c "
@@ -27,7 +28,7 @@ old,new='''$2''','''$3'''
 assert old in s, 'MUTATION TARGET NOT FOUND: $1'
 open('index.html','w',encoding='utf-8',newline='').write(s.replace(old,new,1))"
   if [ $? -ne 0 ]; then mv .idx.bak index.html; echo "STALE       $1  <-- target missing, mutation tests nothing"; stale=$((stale+1)); return; fi
-  if node reflux_checks.cjs "$SRC" >/dev/null 2>&1; then echo "NOT CAUGHT  $1  <-- checker gap"; fail=$((fail+1));
+  if node "$suite" "$SRC" >/dev/null 2>&1; then echo "NOT CAUGHT  $1  <-- checker gap"; fail=$((fail+1));
   else echo "caught      $1"; pass=$((pass+1)); fi
   mv .idx.bak index.html
 }
@@ -104,6 +105,16 @@ run "free-text fields lose their opt-out from the cap" ".field:has(.eq-input),.f
 run "active tab no longer scrolled into view" "if(ab.scrollIntoView)try{ab.scrollIntoView({block:\"nearest\",inline:\"center\"});}catch(e){}" "" reflux_checks.cjs
 runsplash "splash loses its touch-pointer block" "@media(pointer:coarse)" "@media(pointer:fine)"
 runsplash "splash loses its tablet breakpoint" "@media(max-width:900px){.content{padding:24px 16px 32px;}}" ""
+# The point of view.cjs: reflux_checks.cjs asserts that a rule was written, so a
+# defect that leaves every rule intact and breaks only the rendered result is
+# invisible to it. Neither of these two turns the static checker red.
+echo "--- rendered layout (browser) ---"
+run "content forced wider than a phone viewport" ".content{padding:24px;max-width:960px;" ".content{padding:24px;min-width:1200px;max-width:960px;" view.cjs
+runsplash "splash footer link loses its touch sizing" ".footer a{display:inline-flex;align-items:center;min-height:44px;padding:0 4px;}" ".footer a{padding:0 4px;}" view.cjs
+# Dropping the call leaves every definition in place, so the static checker sees
+# nothing wrong: only a rendered zoom shows it never ran.
+run "editor zoom fit never invoked" "      fitZoomWhenSettled();" "" view.cjs
+run "editor zoom clamp pinned to the engine default" "Math.max(0.6, Math.min(1.5," "Math.max(1.5, Math.min(1.5," reflux_checks.cjs
 echo "--- end-to-end arithmetic ---"
 run "RRT inverted" "var rrt = cp.rt / refPeak.rt;" "var rrt = refPeak.rt / cp.rt;" e2e.cjs
 run "v4 Area% fix reverted (negatives back in denominator)" "cp.corrected > 0 ? cp.corrected : 0" "cp.corrected" e2e.cjs
