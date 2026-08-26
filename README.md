@@ -1,7 +1,8 @@
 # Reflux
 
-Process chemistry toolbox. A single self-contained HTML file: seven calculators
-and an LC/GC impurity profile parser, no build step, no server, no install.
+Process chemistry toolbox. A single self-contained HTML file: six calculators,
+an LC/GC impurity profile parser and an offline 2D structure editor. No build
+step, no server, no install.
 
 Open `reflux.html` in any modern browser, locally or from a share. There is
 nothing to run and nothing to configure.
@@ -19,6 +20,7 @@ nothing to run and nothing to configure.
 | Agitation Scale-up | Geometric scale-up of agitated vessels. Adapted from CheCalc methodology. |
 | Equation Builder | User-defined variables and equations. Results chain forward, so each equation's result is available to later ones. |
 | Impurity Profile | Chromatography peak table parser and impurity profile calculator. Detail below. |
+| Structure Editor | Offline 2D chemical structure editor. Draw, then copy the structure into Word or PowerPoint as an image. Detail below. |
 
 ### Impurity Profile
 
@@ -46,6 +48,40 @@ Reads exported peak tables and produces a grouped, cross-sample impurity table.
 Sample name, sample ID and column order are editable in the app and flow
 through to every export. The originally parsed values are retained internally.
 
+### Structure Editor
+
+Draw a 2D structure and get it into a document. The drawing engine is built
+into `reflux.html`, so this tab works with the network disconnected.
+
+- **Atoms:** a quick **Set atom** row (C N O S P F Cl Br I) plus a custom label
+  box, applied to whatever is selected. Arbitrary text becomes a labelled
+  pseudo-atom, so `R`, `Ph` and `OMe` all work.
+- **Bonds:** single, double, triple, wedge and hash, from the editor's bond
+  tool. Rings, charges and the eraser are on the same left rail.
+- **Templates:** benzene, cyclohexane, cyclopentane, cyclobutane,
+  cyclopropane, naphthalene, pyridine, piperidine, furan, thiophene. Repeated
+  inserts cascade rather than stacking on one another.
+- **Clean up:** runs the engine's `standardize()` on each structure. This is
+  not full 2D coordinate auto-layout, which the engine only does through an
+  optional WebAssembly module that fetches external data files. Bundling it
+  would break the offline guarantee, so it is deliberately left out.
+- **Export:** **Copy image** puts a PNG on the clipboard; **PNG** and **SVG**
+  download. PNG output is transparent, cropped tight to the structure and
+  rendered at roughly 3x the on-screen bond length so it stays sharp when
+  pasted. Select part of a drawing to export just that part; with nothing
+  selected the whole drawing is used.
+- If the browser refuses a clipboard write from a local file, **Copy image**
+  falls back to downloading the PNG and says so.
+
+The editor is built the first time you open the tab, not at page load. Two
+consequences worth knowing: the first switch to this tab takes about half a
+second, and every other tab loads at its usual speed regardless.
+
+The drawing canvas stays light under the dark theme. Its toolbar glyphs are
+dark bitmaps baked into the engine's own stylesheet and would be unreadable on
+a dark ground, and a light canvas keeps what you draw identical to what you
+paste.
+
 ---
 
 ## Notes on the calculations
@@ -67,6 +103,27 @@ through to every export. The originally parsed values are retained internally.
 
 ## Dependencies
 
+### Built in
+
+The Structure Editor's engine is vendored directly into `reflux.html`:
+Kekule.js 1.0.4 (the `Kekule.Editor.Composer` widget) and Raphael 2.3.0, which
+enables the engine's SVG export bridge. Both are MIT-licensed, and both are
+pasted in verbatim rather than fetched or built. Together with the engine's
+theme stylesheet they account for roughly 2.8 MB of the file.
+
+This tool arrived with a build script that fetched both libraries from npm and
+inlined them. That step has been resolved away, not adopted. What it used to
+guarantee is now asserted instead: the version pins and a SHA-256 for each
+payload live in the HTML comment header, and `reflux_checks.cjs` recomputes and
+compares them, so the payloads cannot drift unnoticed. The two injection guards
+the build script applied (no `</script` inside an inlined script, no `</style`
+inside an inlined stylesheet) are assertions in the same place.
+
+To move to a newer engine version, fetch the replacement, paste it in, and
+update the version and fingerprint in the header. There is no build to run.
+
+### From CDN
+
 Three libraries load from CDN at page open:
 
 | Library | Used for |
@@ -75,23 +132,30 @@ Three libraries load from CDN at page open:
 | SheetJS 0.20.3 | Calculator Excel exports |
 | math.js 12.4.1 | Equation Builder expression evaluation |
 
-Everything else runs offline. Losing CDN access disables the exports and the
-Equation Builder; all other calculation continues to work. If the tool needs to
-run on a network that blocks CDNs, the three libraries have to be inlined,
-which is a separate job.
+Everything else runs offline, the Structure Editor included. Losing CDN access
+disables the exports and the Equation Builder; all other calculation, and all
+of the Structure Editor, continues to work. If the tool needs to run on a
+network that blocks CDNs, these three libraries have to be inlined the way the
+structure engine already is, which is a separate job.
 
 ---
 
 ## Structure
 
-One file. Two scripts inside it:
+One file. Three authored scripts inside it, plus two vendored engine blocks:
 
 - The calculator script runs at global scope, because the calculator panels use
   inline `onclick` handlers that need to resolve there.
 - The Impurity Profile script is fully enclosed in an IIFE and binds through
   `addEventListener`, so its internals never reach the global namespace.
+- The Structure Editor script is likewise an IIFE binding through
+  `addEventListener`. It exposes exactly one global, `window.refluxChem`, as a
+  scripting and test hook.
+- The two vendored blocks (`chem-lib-raphael`, `chem-lib-kekule`) are
+  third-party UMD bundles and necessarily run at global scope, as the three CDN
+  libraries already do.
 
-The two halves were separate tools before v1 and their CSS was written
+The panels were separate tools before being merged and their CSS was written
 independently. The profiler's variables and selectors are therefore scoped to
 `#panel-ipcal` rather than `:root`. Six custom property names are shared
 between the halves (`--accent`, `--accent-dim`, `--bg-card`, `--bg-input`,
@@ -99,9 +163,24 @@ between the halves (`--accent`, `--accent-dim`, `--bg-card`, `--bg-input`,
 (`body`, `h2`, `label`, `input`, `select`, `button`, `table`), all of which
 would otherwise bleed across every tab. Keep that scoping in place when editing.
 
+The Structure Editor's CSS is scoped the same way, to `#panel-chem`. It styled
+`:root`, `*`, `html`, `body`, `header` and `footer` as a standalone page, and
+its `.card` and `.btn` classes collided with the shell's, so every class and id
+in that panel carries a `chem-` prefix. Its four colliding custom properties
+were dropped rather than renamed: the panel reads the shell palette, and the
+few values with no shell equivalent are declared as `--chem-*`.
+
+The vendored engine stylesheet is scoped to `#panel-chem` too, across all 985
+of its selectors, with exactly one deliberate exception:
+`span.K-StyleSheet-Detector` stays global. The engine checks whether its own
+stylesheet loaded by injecting that span into `document.body` and reading its
+computed `z-index`. Scoping it would fail that check and make the engine inject
+an `@import` for an external theme file, which would break the offline
+guarantee. `reflux_checks.cjs` asserts that this is the only unscoped selector.
+
 Theme is a single `data-theme` attribute on the root element, persisted in
 `localStorage` under `reflux-theme`. Light is the default. One toggle drives
-both halves.
+every panel.
 
 Version lives in the HTML comment header only, never on the page.
 
@@ -126,17 +205,33 @@ also runs the Mode 2 over-subtraction case, where a blank larger than the
 sample drives the corrected reference area negative, since that is the
 condition under which Area% output previously came back blank.
 
-`mutate.sh` injects fourteen deliberate defects and confirms each one turns a
-suite red. A mutation that is not caught is a gap in the tests, not a
-pass. Note that mutation results only mean anything against a green baseline;
+`mutate.sh` injects twenty-seven deliberate defects and confirms each one turns
+a suite red. A mutation that is not caught is a gap in the tests, not a pass. A
+mutation whose target string no longer exists is also a gap, because it has
+silently stopped testing anything, so it is reported as `STALE` and fails the
+run. Note that mutation results only mean anything against a green baseline;
 run the three suites first.
+
+`behave.cjs` and `e2e.cjs` strip the two vendored engine blocks before loading
+the file, exactly as they already strip the CDN script tags. The engine is 2.7
+MB of third-party code they do not test, and its editor needs a real canvas
+that jsdom does not provide. Stripping it also exercises the Structure Editor's
+engine-absent path, which must degrade to a message rather than throw.
+
+What this does not cover: structure rendering and PNG/SVG export cannot run
+under jsdom, so they are not asserted here. Those paths were verified in
+Chromium by hand. If they need locking down, that means a browser-driven suite,
+not another jsdom assertion.
 
 ---
 
 ## Editing
 
 - Work from the current file, never a reconstruction.
-- Keep the profiler CSS scoped and its script inside its IIFE.
+- Keep the profiler and structure-editor CSS scoped, and both scripts inside
+  their IIFEs.
+- The vendored engine blocks are not hand-edited. To change them, replace the
+  payload and update its fingerprint in the header comment.
 - Adding a tab means three edits that must stay in step: the button in
   `.tab-bar`, the `id="panel-<key>"` div, and the key in the `TABS` array. The
   static checker verifies the three agree.

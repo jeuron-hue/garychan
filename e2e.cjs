@@ -13,8 +13,15 @@ const FIX = [
 ];
 
 let html=fs.readFileSync(process.argv[2]||'reflux.html','utf8').replace(/<script src="https:\/\/[^"]+"><\/script>/g,'');
+// strip the vendored structure-editor engine: 2.7MB of third-party code this
+// suite does not exercise, whose composer needs a canvas jsdom does not have.
+html=html.replace(/<script id="chem-lib-[a-z]+">[\s\S]*?<\/script>/g,'');
+html=html.replace(/<style id="chem-theme-css">[\s\S]*?<\/style>/g,'');
+const errs=[];
 const dom=new JSDOM(html,{runScripts:'dangerously',pretendToBeVisual:true,url:'https://localhost/',
-  beforeParse(w){w.ExcelJS={};w.XLSX={utils:{},writeFile(){}};w.math={evaluate:e=>0};}});
+  beforeParse(w){w.ExcelJS={};w.XLSX={utils:{},writeFile(){}};w.math={evaluate:e=>0};
+    w.onerror=(m)=>errs.push(String(m));
+    w.addEventListener('error',e=>errs.push(String(e.message)));}});
 const {window}=dom,d=window.document;
 
 // drive the real file-input path
@@ -82,7 +89,26 @@ setTimeout(()=>{
     chk(pctCells.length>0,'Area% populated under blank over-subtraction (v4 fix intact, '+pctCells.length+' cells)');
     chk(!d.getElementById('refWarn').hasAttribute('hidden'),'over-subtraction warning surfaced');
     chk(!/NaN|undefined/.test(r2.join(' ')),'no NaN under blank subtraction');
-    console.log('\n'+(fails.length?fails.length+' FAILURES':'ALL GREEN'));
-    process.exit(fails.length?1:0);
+
+    // ---- structure editor: the empty-canvas guard ----------------------
+    // Rendering and image export need a real canvas, so they are verified in a
+    // browser, not here. What is testable in jsdom is the guard in front of
+    // them: every export path must refuse an empty drawing with a warning
+    // rather than reaching the engine.
+    window.switchTab('chem');
+    setTimeout(()=>{
+      const st=d.getElementById('chem-status');
+      let threw=false;
+      try{ ['chem-btn-copy','chem-btn-png','chem-btn-svg','chem-btn-clean']
+             .forEach(id=>d.getElementById(id).click()); }catch(e){ threw=true; }
+      chk(!threw,'export buttons guard the empty canvas instead of throwing');
+      // A handler that throws inside jsdom event dispatch never reaches the
+      // try/catch above, so the guard is only really proven by the error log.
+      chk(errs.length===0,'no uncaught errors from the export guards ('+errs.slice(0,2)+')');
+      chk(st.className==='warn','empty-canvas guard raises a warning status');
+      chk(d.getElementById('chem-export-area').children.length===0,'no orphan render host left behind');
+      console.log('\n'+(fails.length?fails.length+' FAILURES':'ALL GREEN'));
+      process.exit(fails.length?1:0);
+    },0);
   },200);
 },400);
