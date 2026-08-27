@@ -21,8 +21,17 @@ build step, no server, no bundler, no npm dependencies at runtime.
   because the calculator panels use inline onclick handlers.
 - Theme is one `data-theme` attribute on the root element, persisted under
   `reflux-theme`. Light default. One toggle drives every panel.
-- Adding a tab means three edits that must stay in step: the button in
-  `.tab-bar`, the `id="panel-<key>"` div, and the key in the `TABS` array.
+- Adding a tab means four edits that must stay in step: the button in
+  `.tab-bar`, the `id="panel-<key>"` div, the key in the `TABS` array, and a
+  card on index.html linking to `reflux.html#<key>`. reflux_checks.cjs asserts
+  all four agree, card order included.
+- Impurity Profile results describe one file set in one order. Anything that
+  changes which files are loaded, or their order, invalidates them and must go
+  through `renderAll()`, which is the single choke point that clears them.
+  Exports read the sample list captured at calculation time, never the live
+  one: taking headers from one and data from the other files every number under
+  the wrong sample name, silently. Renaming a sample is deliberately exempt —
+  it relabels a column, it does not move one.
 
 ## Process
 

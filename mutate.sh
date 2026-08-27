@@ -119,6 +119,18 @@ echo "--- end-to-end arithmetic ---"
 run "RRT inverted" "var rrt = cp.rt / refPeak.rt;" "var rrt = refPeak.rt / cp.rt;" e2e.cjs
 run "v4 Area% fix reverted (negatives back in denominator)" "cp.corrected > 0 ? cp.corrected : 0" "cp.corrected" e2e.cjs
 run "empty-canvas export guard removed" "  function emptyGuard(){\n    if (engineGuard()) return true;" "  function emptyGuard(){\n    if (false) return true;" e2e.cjs
+# Results describe one file set in one order. Removing or reordering a sample
+# used to leave them standing while the exports read their headers from the
+# live list, filing every number under the wrong sample name.
+echo "--- results outliving their file set ---"
+run "file-set change no longer invalidates results" "    invalidateResults();\n    renderFileCards();" "    renderFileCards();" e2e.cjs
+# Hiding the panel without dropping the state leaves the export buttons live,
+# so this checks the state clear and not merely the DOM change.
+run "invalidation hides the panel but keeps the stale state" "    lastGroups = null; lastSettings = null; lastRefWarnings = []; lastSampleList = null;" "    lastRefWarnings = [];" e2e.cjs
+# The exports read the sample list captured at calculation time. Reverting them
+# to the live list is invisible while the invalidation above holds, so what is
+# testable is that the capture is real and load-bearing.
+run "calculation stops capturing its sample list" "    lastSampleList = sampleList;" "    lastSampleList = null;" e2e.cjs
 echo
 echo "caught $pass, missed $fail, stale $stale"
 rm -f mut.html

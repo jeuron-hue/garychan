@@ -59,6 +59,20 @@
                      theme, and a light canvas keeps what you draw identical to
                      what you paste.
                  Calculation logic in every other tab is unchanged.
+                 Fixed after the merge:
+                   - Impurity Profile: results and exports are invalidated
+                     whenever the loaded file set changes. Removing, reordering
+                     or re-roling a sample left the calculated table standing
+                     while the exports took their column headers from the live
+                     file list and their data from the old calculation, so
+                     every number was filed under the wrong sample name. It was
+                     silent either way, and on a reorder the column count did
+                     not even change. renderAll is now the one choke point all
+                     such changes pass through and it clears the results;
+                     exports additionally read the sample list captured at
+                     calculation time rather than the live one, so header and
+                     data cannot disagree. Renaming a sample deliberately does
+                     not invalidate: it relabels a column, it does not move one.
   v1 (2026-08) - First release under the Reflux name. Merge of two previously
                  separate tools into one self-contained single-file toolbox:
                    * the calculator set (Charge Amount, Solution Prep, Yield
@@ -1798,7 +1812,12 @@ try{const t=document.documentElement.getAttribute('data-theme');if(t==='light'){
     else el.textContent = total + ' file' + (total > 1 ? 's' : '') + ' loaded (' + nS + ' sample' + (nS !== 1 ? 's' : '') + ', ' + nB + ' blank' + (nB !== 1 ? 's' : '') + ')';
   }
 
+  // Every path that adds, removes, reorders or re-roles a file ends here, so
+  // this is where stale results die. Editing a sample's name or ID deliberately
+  // does not come through here: that relabels a column, it does not move one,
+  // so the standing results stay valid.
   function renderAll() {
+    invalidateResults();
     renderFileCards();
     renderRefInputs();
     renderSubtractionUI();
@@ -2131,6 +2150,22 @@ try{const t=document.documentElement.getAttribute('data-theme');if(t==='light'){
   // ============================================================
 
   var lastGroups = null, lastSettings = null, lastRefWarnings = [];
+  // The sample list lastGroups was built from, captured at calculation time.
+  // Exports read this instead of the live file list: the two disagree the
+  // moment a file is added, removed, reordered or switched between sample and
+  // blank, and the export takes its column headers from one and its data from
+  // the other, which files every number under the wrong sample name.
+  var lastSampleList = null;
+
+  // Results describe one particular set of files in one particular order, so
+  // any change to that set invalidates them. renderAll() is the single choke
+  // point for such changes and calls this.
+  function invalidateResults() {
+    lastGroups = null; lastSettings = null; lastRefWarnings = []; lastSampleList = null;
+    document.getElementById('resultsSection').hidden = true;
+    var rw = document.getElementById('refWarn'); if (rw) rw.hidden = true;
+    var cs = document.getElementById('copyStatus'); if (cs) cs.textContent = '';
+  }
 
   function runCalculation() {
     var err = document.getElementById('runError');
@@ -2165,6 +2200,9 @@ try{const t=document.documentElement.getAttribute('data-theme');if(t==='light'){
 
     var adjustments = computeSubtractions(settings);
     lastSettings = settings;
+    // getSampleFiles() already returned a fresh array, so this pins membership
+    // and order without pinning the file objects: a later rename still shows.
+    lastSampleList = sampleList;
     lastGroups = computeGroupedRows(sampleList, settings, adjustments);
     buildResultTable(lastGroups, sampleList, settings);
 
@@ -2225,13 +2263,14 @@ try{const t=document.documentElement.getAttribute('data-theme');if(t==='light'){
 
   function exportFilename(ext) {
     var d = new Date();
-    var n = getSampleFiles().length;
+    // Counts the samples the export actually contains, not the ones loaded now.
+    var n = (lastSampleList || getSampleFiles()).length;
     return 'RRT_results_' + n + 'samples_' + d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') + '.' + ext;
   }
 
   function exportDelim(sep) {
     if (!lastGroups || !lastSettings) return;
-    var sampleList = getSampleFiles(); if (!sampleList.length) return;
+    var sampleList = lastSampleList; if (!sampleList || !sampleList.length) return;
     var allRows = buildExportRows(sampleList, lastGroups, lastSettings);
     var text = allRows.map(function (r) { return r.map(function (v) { return escapeCell(v, sep); }).join(sep); }).join('\r\n');
     var blob = new Blob(['\uFEFF' + text], { type: 'text/plain;charset=utf-8' });
@@ -2243,7 +2282,7 @@ try{const t=document.documentElement.getAttribute('data-theme');if(t==='light'){
   function copyTableTsv() {
     var status = document.getElementById('copyStatus');
     if (!lastGroups || !lastSettings) { return; }
-    var sampleList = getSampleFiles(); if (!sampleList.length) return;
+    var sampleList = lastSampleList; if (!sampleList || !sampleList.length) return;
     var allRows = buildExportRows(sampleList, lastGroups, lastSettings);
     var text = allRows.map(function (r) { return r.map(function (v) { return escapeCell(v, '\t'); }).join('\t'); }).join('\r\n');
     function ok() { if (status) { status.textContent = 'Copied. Paste into Excel or Sheets.'; setTimeout(function () { status.textContent = ''; }, 4000); } }
@@ -2262,7 +2301,7 @@ try{const t=document.documentElement.getAttribute('data-theme');if(t==='light'){
 
   function exportXlsx() {
     if (!lastGroups || !lastSettings) return;
-    var sampleList = getSampleFiles(); if (!sampleList.length) return;
+    var sampleList = lastSampleList; if (!sampleList || !sampleList.length) return;
     if (typeof ExcelJS === 'undefined') { alert('ExcelJS not loaded (check network).'); return; }
 
     var highlights = [];
@@ -2331,12 +2370,9 @@ try{const t=document.documentElement.getAttribute('data-theme');if(t==='light'){
   });
 
   document.getElementById('clearAll').addEventListener('click', function () {
-    files = []; lastGroups = null; lastSettings = null; lastRefWarnings = [];
-    document.getElementById('resultsSection').hidden = true;
+    files = [];
     document.getElementById('parseError').hidden = true;
-    var rw = document.getElementById('refWarn'); if (rw) rw.hidden = true;
-    var cs = document.getElementById('copyStatus'); if (cs) cs.textContent = '';
-    renderAll();
+    renderAll();// results, warning and copy status are cleared by invalidateResults()
   });
 
   document.getElementById('subMode').addEventListener('change', renderSubtractionUI);

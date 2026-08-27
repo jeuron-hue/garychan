@@ -49,9 +49,17 @@ Reads exported peak tables and produces a grouped, cross-sample impurity table.
   exceed it, on screen and in the XLSX export.
 - **Output:** CSV, TSV, XLSX, or the whole table to clipboard as TSV for direct
   paste into a sheet.
+- **Results are tied to their file set:** adding, removing, reordering or
+  re-roling a file clears the results, and the export buttons write nothing
+  until Calculate is pressed again. An export always describes the file set
+  that was loaded when Calculate was pressed, so a column heading cannot end up
+  above another sample's numbers.
 
-Sample name, sample ID and column order are editable in the app and flow
-through to every export. The originally parsed values are retained internally.
+Sample name and sample ID are editable in the app and flow through to every
+export without recalculating: a rename relabels a column, it does not move one.
+Column order is editable too, but reordering changes which file set the results
+describe, so it clears them and Calculate has to be pressed again. The
+originally parsed values are retained internally.
 
 ### Deep links
 
@@ -219,16 +227,28 @@ Version lives in the HTML comment header only, never on the page.
 
 ## Tests
 
-Three suites, Node with jsdom. All must pass before the file is considered
-shippable.
+Four suites. All must pass before the file is considered shippable.
 
 ```
 npm install jsdom
 node reflux_checks.cjs      # static: residue, structure, scoping, syntax, wiring
 node behave.cjs             # behavioural: tabs, panels, theme, exposed handlers
 node e2e.cjs                # end to end: parses fixtures, checks computed values
+node view.cjs               # rendered: measures real boxes in headless Chrome
 ./mutate.sh                 # mutation: confirms the suites actually bite
 ```
+
+The first three run on Node with jsdom. `view.cjs` does not: it drives a
+headless Chrome or Edge over the DevTools protocol and measures the boxes the
+browser actually produced. It needs a Chrome or Edge on the machine and honours
+`CHROME_PATH`, but adds no dependency.
+
+The three see different things, and the difference is the point.
+`reflux_checks.cjs` reads the file as text, so it can confirm a rule was
+written but not that it rendered. `behave.cjs` drives the page under jsdom,
+which does no layout, so every box there measures zero and no size can be
+asserted. `view.cjs` is the only one that catches a layout defect that leaves
+every rule intact.
 
 `e2e.cjs` builds LabSolutions-shaped fixtures in memory, drives the real file
 input, and checks computed RRT and Area% values against hand arithmetic. It
@@ -236,14 +256,20 @@ also runs the Mode 2 over-subtraction case, where a blank larger than the
 sample drives the corrected reference area negative, since that is the
 condition under which Area% output previously came back blank.
 
-`mutate.sh` injects thirty-three deliberate defects and confirms each one turns
-a suite red. Five of them target the splash page and the deep links, two by
-mutating `index.html` rather than `reflux.html`, so the cross-file link
-assertions are proven rather than assumed. A mutation that is not caught is a gap in the tests, not a pass. A
-mutation whose target string no longer exists is also a gap, because it has
-silently stopped testing anything, so it is reported as `STALE` and fails the
-run. Note that mutation results only mean anything against a green baseline;
-run the three suites first.
+`e2e.cjs` also holds the file-set staleness case: it calculates over three
+samples, exports, and then removes and reorders a sample to confirm the results
+and every export path go quiet until Calculate is pressed again. It asserts the
+invariant the old defect broke, that every exported row is the width of its
+header row, and that a rename still leaves the results standing.
+
+`mutate.sh` injects fifty-three deliberate defects and confirms each one turns
+a suite red. Eight of them target the splash page, the deep links and checkout
+hygiene, mutating `index.html` and `.gitattributes` rather than `reflux.html`,
+so the cross-file assertions are proven rather than assumed. A mutation that is
+not caught is a gap in the tests, not a pass. A mutation whose target string no
+longer exists is also a gap, because it has silently stopped testing anything,
+so it is reported as `STALE` and fails the run. Note that mutation results only
+mean anything against a green baseline; run the four suites first.
 
 `behave.cjs` and `e2e.cjs` strip the two vendored engine blocks before loading
 the file, exactly as they already strip the CDN script tags. The engine is 2.7
@@ -269,7 +295,11 @@ not another jsdom assertion.
   `.tab-bar`, the `id="panel-<key>"` div, the key in the `TABS` array, and a
   card on `index.html` linking to `reflux.html#<key>`. The static checker
   verifies all four agree, including the card order.
-- Run all three suites plus the mutation script before committing.
+- Impurity Profile results describe one file set in one order. Anything that
+  changes which files are loaded, or their order, must invalidate them through
+  `renderAll()`, and the exports must keep reading the sample list captured at
+  calculation time.
+- Run all four suites plus the mutation script before committing.
 
 ---
 

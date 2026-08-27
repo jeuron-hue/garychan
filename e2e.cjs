@@ -18,11 +18,93 @@ let html=fs.readFileSync(process.argv[2]||'reflux.html','utf8').replace(/<script
 html=html.replace(/<script id="chem-lib-[a-z]+">[\s\S]*?<\/script>/g,'');
 html=html.replace(/<style id="chem-theme-css">[\s\S]*?<\/style>/g,'');
 const errs=[];
+// Every delimited export ends in `new Blob([text])`, so replacing Blob is the
+// cheapest way to read back exactly what the download would have contained.
+// Reassigning window.Blob does not disturb window.File, which keeps its own
+// reference to the internal class, so the file-input path still parses.
+const exportsSeen=[];
 const dom=new JSDOM(html,{runScripts:'dangerously',pretendToBeVisual:true,url:'https://localhost/',
   beforeParse(w){w.ExcelJS={};w.XLSX={utils:{},writeFile(){}};w.math={evaluate:e=>0};
+    w.Blob=class{constructor(parts){exportsSeen.push(parts.join(''));}};
+    w.URL.createObjectURL=()=>'blob:stub'; w.URL.revokeObjectURL=()=>{};
+    w.HTMLAnchorElement.prototype.click=function(){};// downloads are not navigations here
     w.onerror=(m)=>errs.push(String(m));
     w.addEventListener('error',e=>errs.push(String(e.message)));}});
 const {window}=dom,d=window.document;
+
+// ---- results and exports must not outlive the file set they describe -------
+// Removing or reordering a sample after Calculate used to leave lastGroups in
+// place while the exports took their column headers from the live file list.
+// Header and data then described different samples, so every number was filed
+// under the wrong sample name with no error and, on a reorder, no change in
+// column count to give it away. renderAll() is now the choke point that
+// invalidates, and the exports read the sample list captured at calculation
+// time rather than the live one.
+function stalenessPhase(){
+  d.getElementById('clearAll').click();
+  const three=[{n:'STL-A',i:'A',p:[[10.00,900000],[12.50,1111]]},
+               {n:'STL-B',i:'B',p:[[10.00,900000],[12.50,2222]]},
+               {n:'STL-C',i:'C',p:[[10.00,900000],[12.50,3333]]}]
+    .map(f=>new window.File([mk(f.n,f.i,f.p)],f.n+'.txt',{type:'text/plain'}));
+  const fi=d.getElementById('fileInput');
+  Object.defineProperty(fi,'files',{value:three,configurable:true});
+  fi.dispatchEvent(new window.Event('change',{bubbles:true}));
+  setTimeout(()=>{
+    chk(d.getElementById('resultsSection').hasAttribute('hidden'),'loading files clears the previous results');
+    d.getElementById('runBtn').click();
+    chk(!d.getElementById('resultsSection').hasAttribute('hidden'),'3-sample calculation ran ("'+d.getElementById('runError').textContent+'")');
+
+    exportsSeen.length=0;
+    d.getElementById('exportTsv').click();
+    chk(exportsSeen.length===1,'TSV export wrote one file');
+    const grid=exportsSeen[0].replace(/^﻿/,'').split('\r\n').map(r=>r.split('\t'));
+    const hdrW=grid[0].length;
+    // The invariant the defect broke: one header cell above every data cell.
+    const ragged=grid.filter(r=>r.length>1&&r.length!==hdrW);
+    chk(ragged.length===0,'every export row is the header width ('+hdrW+', '+ragged.length+' ragged)');
+    const colA=grid[0].indexOf('STL-A'), colB=grid[0].indexOf('STL-B');
+    chk(colA>0&&colB>colA,'export header carries the samples in order');
+    const dataRow=grid.find(r=>r.length===hdrW&&/1111/.test(r.join('\t')));
+    chk(!!dataRow,'marker area 1111 present in the export');
+    chk(!!dataRow&&dataRow.slice(colA,colB).join('|').includes('1111'),
+        'STL-A marker area sits under the STL-A header, not a neighbour');
+
+    // Remove the first sample and export again without pressing Calculate.
+    d.querySelectorAll('#filesContainer > .sample-card button.danger')[0].click();
+    chk(d.getElementById('resultsSection').hasAttribute('hidden'),'removing a sample hides the stale results');
+    exportsSeen.length=0;
+    d.getElementById('exportTsv').click();
+    chk(exportsSeen.length===0,'export after a removal writes nothing until Calculate is pressed again');
+    d.getElementById('copyTsv').click();
+    chk(exportsSeen.length===0,'clipboard copy after a removal is refused too');
+
+    // Reorder is the same defect with matching column widths, so the output
+    // looks perfectly well formed while every label is one column out.
+    d.getElementById('runBtn').click();
+    chk(!d.getElementById('resultsSection').hasAttribute('hidden'),'recalculated after the removal');
+    const navs=[...d.querySelectorAll('#filesContainer > .sample-card')[0].querySelectorAll('button')]
+      .filter(b=>b.className!=='danger');
+    chk(navs.length>=2,'reorder controls present on the sample card');
+    navs[1].click();// move the first sample down
+    chk(d.getElementById('resultsSection').hasAttribute('hidden'),'reordering samples hides the stale results');
+    exportsSeen.length=0;
+    d.getElementById('exportTsv').click();
+    chk(exportsSeen.length===0,'export after a reorder writes nothing until Calculate is pressed again');
+
+    // The deliberate exclusion: a rename relabels a column, it does not move
+    // one, so the standing results stay valid and must survive.
+    d.getElementById('runBtn').click();
+    const nameInp=d.querySelector('#filesContainer > .sample-card input[type=text]');
+    chk(!!nameInp,'sample name field present');
+    nameInp.value='STL-Renamed';
+    nameInp.dispatchEvent(new window.Event('change',{bubbles:true}));
+    chk(!d.getElementById('resultsSection').hasAttribute('hidden'),
+        'renaming a sample keeps the results: it relabels a column, it does not move one');
+
+    console.log('\n'+(fails.length?fails.length+' FAILURES':'ALL GREEN'));
+    process.exit(fails.length?1:0);
+  },300);
+}
 
 // drive the real file-input path
 const files=FIX.map(f=>new window.File([mk(f.n,f.i,f.p)],f.n+'.txt',{type:'text/plain'}));
@@ -107,8 +189,7 @@ setTimeout(()=>{
       chk(errs.length===0,'no uncaught errors from the export guards ('+errs.slice(0,2)+')');
       chk(st.className==='warn','empty-canvas guard raises a warning status');
       chk(d.getElementById('chem-export-area').children.length===0,'no orphan render host left behind');
-      console.log('\n'+(fails.length?fails.length+' FAILURES':'ALL GREEN'));
-      process.exit(fails.length?1:0);
+      stalenessPhase();
     },0);
   },200);
 },400);
