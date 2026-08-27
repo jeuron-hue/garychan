@@ -131,6 +131,20 @@ run "invalidation hides the panel but keeps the stale state" "    lastGroups = n
 # to the live list is invisible while the invalidation above holds, so what is
 # testable is that the capture is real and load-bearing.
 run "calculation stops capturing its sample list" "    lastSampleList = sampleList;" "    lastSampleList = null;" e2e.cjs
+# Variable names are substituted in one pass over whole identifiers. Matching
+# anything narrower puts a name back inside sqrt, min, abs and exp.
+echo "--- equation builder substitution ---"
+run "substitution stops matching whole identifiers" "/[A-Za-z_][A-Za-z_0-9]*/g" "/[A-Za-z_]/g" behave.cjs
+run "variable lookup becomes case-sensitive" "byLower[id.toLowerCase()]" "byLower[id]" behave.cjs
+run "bare x stops meaning multiply" "'*'),scope:safeScope}" "'+'),scope:safeScope}" behave.cjs
+echo "--- user text escaped, not interpolated ---"
+run "escape helper stops escaping angle brackets and quotes" ".replace(/[&<>\"']/g,c=>(" ".replace(/[&]/g,c=>(" behave.cjs
+run "reagent name written unescaped into its field" "value=\"'+esc(r.name)+'\"" "value=\"'+r.name+'\"" behave.cjs
+# wt% is a mass basis and g/L a volume basis; density is the bridge between
+# them. Dropping it silently assumes every solvent weighs 1 g/mL.
+echo "--- wt% carries the solution density ---"
+run "wt% to g/L drops the density" "case'wt%':g=val*10*dens;break;}" "case'wt%':g=val*10;break;}" behave.cjs
+run "g/L to wt% drops the density" "case'wt%':result=g/(10*dens);break;}" "case'wt%':result=g/10;break;}" behave.cjs
 echo
 echo "caught $pass, missed $fail, stale $stale"
 rm -f mut.html

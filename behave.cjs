@@ -14,7 +14,10 @@ const errs=[];
 const dom=new JSDOM(html,{runScripts:'dangerously',pretendToBeVisual:true,url:'https://localhost/',
   beforeParse(w){
     w.ExcelJS={}; w.XLSX={utils:{},writeFile(){}};
-    w.math={evaluate:(e,s)=>Function('s','with(s){return '+e+'}')(s||{})};
+    // Math is layered under the scope so the stub answers to sqrt/min/abs/log
+    // /exp. The substitution defect showed up only against real function names:
+    // a variable named q used to be rewritten inside sqrt.
+    w.math={evaluate:(e,s)=>Function('s','with(Math){with(s){return '+e+'}}')(s||{})};
     w.onerror=(m)=>errs.push(String(m));
     w.addEventListener('error',e=>errs.push(String(e.message)));
   }});
@@ -71,6 +74,83 @@ const set=(id,v)=>{const e=d.getElementById(id); if(e){e.value=v; e.dispatchEven
 chk(typeof window.calcCharge==='function','calcCharge exposed');
 chk(typeof window.evalEquations==='function','evalEquations exposed');
 chk(typeof window.calcUnits==='function','calcUnits exposed');
+
+// The calculator panels keep their state in let-scoped globals, which are not
+// window properties, so reach them the way the page itself would.
+const ev=(code)=>window.eval(code);
+
+// ---- equation builder: whole-identifier substitution ----------------------
+// Names used to be substituted with one unanchored global regex each, so a name
+// matched inside longer identifiers and inside the tokens the pass had already
+// written. Single-letter names are the natural case in a chemistry tool and
+// every one of them collided with some function.
+const runEq=(vars,expr)=>{
+  ev('eqVars.length=0;eqEqs.length=0;');
+  ev('eqVars.push.apply(eqVars,'+JSON.stringify(vars.map(([n,val],i)=>({id:i+1,name:n,value:String(val)})))+');'
+    +'eqEqs.push('+JSON.stringify({id:99,name:'',expr})+');');
+  window.evalEquations();
+  return d.querySelector('#eq-results .result-value').textContent.trim();
+};
+chk(runEq([['q',16]],'sqrt(q)')==='4','variable q survives sqrt(q) (got "'+runEq([['q',16]],'sqrt(q)')+'")');
+chk(runEq([['t',9]],'sqrt(t)')==='3','variable t survives sqrt(t)');
+chk(runEq([['n',2]],'min(n, 5)')==='2','variable n survives min(n, 5)');
+chk(runEq([['a',-3]],'abs(a)')==='3','variable a survives abs(a)');
+chk(runEq([['e',0]],'exp(e)')==='1','variable e survives exp(e)');
+// __v0 contains a v, so a variable named v used to rewrite its own tokens.
+chk(runEq([['mass',10],['v',2]],'mass / v')==='5','a variable named v does not corrupt the substitution tokens');
+chk(runEq([['area',3],['v',4]],'area * v')==='12','v still resolves alongside a longer name');
+// Behaviour that must survive the rewrite.
+chk(runEq([['mw',100]],'MW * 2')==='200','lookup stays case-insensitive');
+chk(runEq([['mass',4]],'mass x 2')==='8','an undefined x still means multiply');
+chk(runEq([['x',5]],'x + 1')==='6','a defined x is a variable, not multiplication');
+chk(runEq([['mass',2]],'1e3 * mass')==='2000','scientific notation is left alone');
+
+// ---- user text is escaped, never interpolated ----------------------------
+// These panels build markup as strings, so a quote or an angle bracket in any
+// name field used to break out of the attribute it was written into.
+const inject='"><img src=x onerror=alert(1)>';
+ev('chReagents.length=0;');window.addChReagent();
+const rid=ev('chReagents[0].id');
+window.updCR(rid,'name',inject);
+window.updCR(rid,'ratioType','wt/wt');
+chk(d.querySelectorAll('#ch-reagents img').length===0,'reagent name escaped in the form');
+chk(d.querySelector('#ch-reagents input[type=text]').value===inject,'reagent name round-trips through the escape unchanged');
+set('ch-basis-wt','100');window.updCR(rid,'ratio','1');window.calcCharge();
+chk(d.querySelectorAll('#ch-results img').length===0,'reagent name escaped in the results');
+chk(d.getElementById('ch-results').textContent.includes('<img'),'the results show the name as text');
+
+ev('ymbSteps.length=0;');window.addYmbStep();
+window.updYmb(ev('ymbSteps[0].id'),'title',inject);window.renderYmb();
+chk(d.querySelectorAll('#ymb-steps img').length===0,'block title escaped');
+chk(d.querySelector('#ymb-steps .title-input').value===inject,'block title round-trips unchanged');
+
+runEq([['<img src=y onerror=alert(2)>',1]],'1+1');
+chk(d.querySelectorAll('#eq-variables img, #eq-equations img, #eq-results img').length===0,'variable name escaped in the scope pill and results');
+const exprInject='<img src=z onerror=alert(3)>';
+runEq([['mass',1]],exprInject);
+chk(d.querySelectorAll('#eq-equations img, #eq-results img').length===0,'equation expression escaped');
+chk(d.querySelector('#eq-equations .eq-input').value===exprInject,'equation expression round-trips unchanged');
+
+// ---- unit converter: wt% is a mass basis, so it needs the density --------
+// wt% is grams per 100 g of solution; g/L is per litre. One litre weighs
+// 1000*density grams, so density is the bridge. Assuming 1 g/mL silently
+// understated every non-aqueous solvent, and Solution Prep already asks for it.
+const conv=(from,to,val,dens)=>{
+  d.getElementById('unit-cat').value='concentration';
+  window.updateUnitOptions();
+  d.getElementById('unit-value').value=String(val);
+  d.getElementById('unit-density').value=String(dens);
+  d.getElementById('unit-from').value=from;
+  d.getElementById('unit-to').value=to;
+  window.calcUnits();
+  return d.querySelector('#unit-results .result-value').textContent.trim();
+};
+chk(!!d.getElementById('unit-density'),'unit converter exposes a solution density field');
+chk(conv('wt%','g/L',1,1.0)==='10 g/L','1 wt% at 1.00 g/mL is 10 g/L (got "'+conv('wt%','g/L',1,1.0)+'")');
+chk(conv('wt%','g/L',1,1.33)==='13.3 g/L','1 wt% in DCM at 1.33 g/mL is 13.3 g/L, not 10');
+chk(conv('wt%','g/L',1,0.87)==='8.7 g/L','1 wt% in toluene at 0.87 g/mL is 8.7 g/L');
+chk(conv('g/L','wt%',13.3,1.33)==='1 wt%','g/L back to wt% divides by the density');
+chk(conv('g/L','mg/L',1,1.33)==='1000 mg/L','density does not touch the volume-basis units');
 
 // ---- structure editor -------------------------------------------------
 // Its panel initialises on the load event, so everything below runs after a

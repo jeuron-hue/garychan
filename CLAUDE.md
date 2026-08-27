@@ -25,6 +25,10 @@ build step, no server, no bundler, no npm dependencies at runtime.
   `.tab-bar`, the `id="panel-<key>"` div, the key in the `TABS` array, and a
   card on index.html linking to `reflux.html#<key>`. reflux_checks.cjs asserts
   all four agree, card order included.
+- The calculator panels build markup as strings, so every value that came from
+  a text field goes through `esc()` on the way in. The Impurity Profile half
+  builds its DOM with createElement and textContent; do not mix the two styles
+  within a panel.
 - Impurity Profile results describe one file set in one order. Anything that
   changes which files are loaded, or their order, invalidates them and must go
   through `renderAll()`, which is the single choke point that clears them.

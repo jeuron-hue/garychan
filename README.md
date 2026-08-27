@@ -21,9 +21,9 @@ opened from disk it works the same way, as long as it sits next to
 | Charge Amount | Charge quantities from a ratio basis. wt/wt, mol/mol, vol/wt, wt/vol, vol/vol. |
 | Solution Prep | Prepare from solid, dilute from stock, or solve a molarity relation with any three of four terms. |
 | Yield & Mass Balance | Molar yield, mass balance across splits, or both. Per-block mode selection. |
-| Unit Converter | Common chemistry and engineering units. Pressure converter live-syncs kgf/cm2 gauge, mmHg absolute and hPa absolute. |
+| Unit Converter | Common chemistry and engineering units. Pressure converter live-syncs kgf/cm2 gauge, mmHg absolute and hPa absolute. Concentration takes a solution density, used for wt%. |
 | Agitation Scale-up | Geometric scale-up of agitated vessels. Adapted from CheCalc methodology. |
-| Equation Builder | User-defined variables and equations. Results chain forward, so each equation's result is available to later ones. |
+| Equation Builder | User-defined variables and equations. Results chain forward, so each equation's result is available to later ones. Variable names may be any length, single letters included. |
 | Impurity Profile | Chromatography peak table parser and impurity profile calculator. Detail below. |
 | Structure Editor | Offline 2D chemical structure editor. Draw, then copy the structure into Word or PowerPoint as an image. Detail below. |
 
@@ -129,6 +129,17 @@ paste.
   Mode 1 instead.
 - Pressure conversions treat production units (kgf/cm2) as gauge and lab units
   (mmHg, hPa) as absolute. The three fields stay in sync as any one is edited.
+- wt% is a mass basis, g/L a volume basis, so converting between them needs the
+  solution density. The concentration converter takes one, defaulting to
+  1.0 g/mL, the same number Solution Prep asks for. It matters: 1 wt% is
+  13.3 g/L in dichloromethane and 8.7 g/L in toluene, not 10 g/L. ppm and ppb
+  are treated as volume-basis synonyms of mg/L and ug/L and are unaffected.
+- Equation Builder substitutes variable names in one pass over whole
+  identifiers, so a name can never match inside a longer identifier or inside a
+  function name. Single-letter names are safe: q does not collide with sqrt,
+  nor n with min. Name lookup is case-insensitive, so MW finds mw. A bare x
+  between operands means multiply, unless x is itself a defined variable, in
+  which case it is the variable.
 - Agitation scale-up is geometric. It assumes similar vessel geometry between
   scales and will mislead if that does not hold.
 
@@ -262,7 +273,7 @@ and every export path go quiet until Calculate is pressed again. It asserts the
 invariant the old defect broke, that every exported row is the width of its
 header row, and that a rename still leaves the results standing.
 
-`mutate.sh` injects fifty-three deliberate defects and confirms each one turns
+`mutate.sh` injects sixty deliberate defects and confirms each one turns
 a suite red. Eight of them target the splash page, the deep links and checkout
 hygiene, mutating `index.html` and `.gitattributes` rather than `reflux.html`,
 so the cross-file assertions are proven rather than assumed. A mutation that is
