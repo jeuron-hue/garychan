@@ -142,6 +142,12 @@ run "escape helper stops escaping angle brackets and quotes" ".replace(/[&<>\"']
 run "reagent name written unescaped into its field" "value=\"'+esc(r.name)+'\"" "value=\"'+r.name+'\"" behave.cjs
 # wt% is a mass basis and g/L a volume basis; density is the bridge between
 # them. Dropping it silently assumes every solvent weighs 1 g/mL.
+echo "--- dynamic row ids ---"
+# Reverting to a timestamp reproduces the original collision exactly: two rows
+# built in one tick share an id, so edits land on the wrong row and a single
+# remove deletes both.
+run "row ids revert to a timestamp and collide" "function nextId(){return ++rowSeq;}" "function nextId(){return Date.now();}" behave.cjs
+run "row ids revert to the timestamp-plus-random scheme" "function nextId(){return ++rowSeq;}" "function nextId(){return Date.now()+Math.round(Math.random());}" behave.cjs
 echo "--- wt% carries the solution density ---"
 run "wt% to g/L drops the density" "case'wt%':g=val*10*dens;break;}" "case'wt%':g=val*10;break;}" behave.cjs
 run "g/L to wt% drops the density" "case'wt%':result=g/(10*dens);break;}" "case'wt%':result=g/10;break;}" behave.cjs

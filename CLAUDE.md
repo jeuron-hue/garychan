@@ -25,6 +25,9 @@ build step, no server, no bundler, no npm dependencies at runtime.
   `.tab-bar`, the `id="panel-<key>"` div, the key in the `TABS` array, and a
   card on index.html linking to `reflux.html#<key>`. reflux_checks.cjs asserts
   all four agree, card order included.
+- Dynamic rows in the calculator panels key on `nextId()`, never a timestamp.
+  Two rows built in the same millisecond used to share an id, and the update
+  helpers then edit the wrong row while the remove helpers delete both.
 - The calculator panels build markup as strings, so every value that came from
   a text field goes through `esc()` on the way in. The Impurity Profile half
   builds its DOM with createElement and textContent; do not mix the two styles

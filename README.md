@@ -273,7 +273,7 @@ and every export path go quiet until Calculate is pressed again. It asserts the
 invariant the old defect broke, that every exported row is the width of its
 header row, and that a rename still leaves the results standing.
 
-`mutate.sh` injects sixty deliberate defects and confirms each one turns
+`mutate.sh` injects sixty-two deliberate defects and confirms each one turns
 a suite red. Eight of them target the splash page, the deep links and checkout
 hygiene, mutating `index.html` and `.gitattributes` rather than `reflux.html`,
 so the cross-file assertions are proven rather than assumed. A mutation that is

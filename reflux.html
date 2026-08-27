@@ -90,6 +90,14 @@
                      attribute it sat in and an angle bracket became live
                      markup. The Impurity Profile half builds its DOM through
                      createElement and needed no change.
+                   - Every dynamic row in the calculator panels keys on a
+                     counter rather than a timestamp. Rows created inside the
+                     same millisecond shared an id, and a shared id is not
+                     benign: the update helpers find the first match and edit
+                     the wrong row, and the remove helpers filter by id and
+                     delete both. Outputs already carried a random component,
+                     which only made it unlikely; all five sites now share one
+                     source that cannot collide.
                    - Unit Converter: wt% conversions take a solution density,
                      as Solution Prep already did. wt% is grams per 100 g of
                      solution and g/L is per litre, so assuming 1 g/mL made
@@ -1012,6 +1020,15 @@ applyHashTab();
 // half builds its DOM with createElement and textContent and needs none of
 // this; only the calculator panels do.
 function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+// One id source for every dynamic row, in every calculator panel. Date.now()
+// alone collided whenever two rows were created inside the same millisecond,
+// and a collision is not benign: updCR, updYmb and updEqVar all find the first
+// match and so edit the wrong row, while the remove helpers filter by id and
+// delete both. Date.now()+Math.random(), used by newOutput, only made that
+// unlikely. A counter cannot collide, and nothing persists these ids past a
+// reload, so it need not be a timestamp.
+let rowSeq=0;
+function nextId(){return ++rowSeq;}
 function v(id){return parseFloat(document.getElementById(id).value);}
 function sv(id){return document.getElementById(id).value;}
 function fmt(n,dp=4){if(n===null||n===undefined||isNaN(n)||!isFinite(n))return"\u2014";if(Math.abs(n)>=1e6||(Math.abs(n)<0.001&&n!==0))return n.toExponential(dp);return parseFloat(n.toFixed(dp)).toString();}
@@ -1140,7 +1157,7 @@ function calcAgiPure(T1,Z1,N1,agiID,dtID,critID,den,visc,sUp,userNq,userNp){
 
 // ========== CHARGE AMOUNT (UI) ==========
 let chReagents=[];
-function addChReagent(){chReagents.push({id:Date.now(),name:'',ratioType:'wt/wt',ratio:'',purity:100,mw:'',density:''});renderChReagents();}
+function addChReagent(){chReagents.push({id:nextId(),name:'',ratioType:'wt/wt',ratio:'',purity:100,mw:'',density:''});renderChReagents();}
 function removeChReagent(id){chReagents=chReagents.filter(r=>r.id!==id);renderChReagents();calcCharge();}
 function updCR(id,key,val){const r=chReagents.find(x=>x.id===id);if(r)r[key]=val;if(key==='ratioType')renderChReagents();calcCharge();}
 function renderChReagents(){
@@ -1226,8 +1243,8 @@ function exportSolution(){const wb=XLSX.utils.book_new();let data;if(solMode==='
 
 // ========== YIELD & MASS BALANCE (UI — unchanged from v1) ==========
 let ymbSteps=[];
-function newOutput(first){return{id:Date.now()+Math.random(),name:'',mode:'masscont',net:'',mass:'',cont:'',vol:'',dens:'',isProduct:first};}
-function addYmbStep(){ymbSteps.push({id:Date.now(),title:'',blockMode:'yield',inName:'',inMode:'masscont',inNet:'',inMass:'',inCont:'',inVol:'',inDens:'',inMW:'',outMW:'',outputs:[newOutput(true)]});renderYmb();}
+function newOutput(first){return{id:nextId(),name:'',mode:'masscont',net:'',mass:'',cont:'',vol:'',dens:'',isProduct:first};}
+function addYmbStep(){ymbSteps.push({id:nextId(),title:'',blockMode:'yield',inName:'',inMode:'masscont',inNet:'',inMass:'',inCont:'',inVol:'',inDens:'',inMW:'',outMW:'',outputs:[newOutput(true)]});renderYmb();}
 function removeYmbStep(id){ymbSteps=ymbSteps.filter(s=>s.id!==id);renderYmb();calcYmb();}
 function setBlockMode(stepId,mode){const s=ymbSteps.find(x=>x.id===stepId);if(s){s.blockMode=mode;if(mode==='yield'){s.outputs=[newOutput(true)];}renderYmb();}}
 function updYmb(stepId,key,val){const s=ymbSteps.find(x=>x.id===stepId);if(s){s[key]=val;if(key==='inMode')renderYmb();else calcYmb();}}
@@ -1340,11 +1357,11 @@ calcAgi();
 
 // ========== EQUATION BUILDER (UI — with scope display) ==========
 let eqVars=[],eqEqs=[];
-function addEqVariable(){eqVars.push({id:Date.now(),name:'',value:''});renderEqVars();}
+function addEqVariable(){eqVars.push({id:nextId(),name:'',value:''});renderEqVars();}
 function removeEqVar(id){eqVars=eqVars.filter(v=>v.id!==id);renderEqVars();}
 function renderEqVars(){document.getElementById('eq-variables').innerHTML=eqVars.map(v=>'<div class="dynamic-row" data-id="'+v.id+'"><div class="field"><label>Name</label><input type="text" value="'+esc(v.name)+'" onchange="updEqVar('+v.id+',\'name\',this.value)" placeholder="e.g. mass_in"></div><div class="field"><label>Value</label><input type="number" step="any" value="'+v.value+'" onchange="updEqVar('+v.id+',\'value\',this.value)"></div><button class="btn btn-danger" onclick="removeEqVar('+v.id+')">✕</button></div>').join('');}
 function updEqVar(id,key,val){const v=eqVars.find(x=>x.id===id);if(v)v[key]=val;}
-function addEqEquation(){eqEqs.push({id:Date.now(),name:'',expr:''});renderEqEqs();}
+function addEqEquation(){eqEqs.push({id:nextId(),name:'',expr:''});renderEqEqs();}
 function removeEqEq(id){eqEqs=eqEqs.filter(e=>e.id!==id);renderEqEqs();}
 function renderEqEqs(){
   // Build scope display showing available variables before each equation

@@ -152,6 +152,41 @@ chk(conv('wt%','g/L',1,0.87)==='8.7 g/L','1 wt% in toluene at 0.87 g/mL is 8.7 g
 chk(conv('g/L','wt%',13.3,1.33)==='1 wt%','g/L back to wt% divides by the density');
 chk(conv('g/L','mg/L',1,1.33)==='1000 mg/L','density does not touch the volume-basis units');
 
+// ---- dynamic row ids survive same-tick creation --------------------------
+// Rows were keyed on Date.now(), which collides whenever two are created inside
+// one millisecond. The collision is not benign: the update helpers find the
+// first match and so edit the wrong row, and the remove helpers filter by id
+// and delete both. Every add below runs in a single tick, which is exactly the
+// case the old scheme could not survive.
+const idsOf=(arr)=>ev(arr+'.map(x=>x.id)');
+ev('eqVars.length=0;');window.addEqVariable();window.addEqVariable();window.addEqVariable();
+const vids=idsOf('eqVars');
+chk(new Set(vids).size===3,'three variables added in one tick get distinct ids (got '+vids+')');
+window.updEqVar(vids[1],'name','SECOND');
+chk(ev('eqVars.map(v=>v.name).join(",")')===',SECOND,','naming the second variable edits only the second');
+window.removeEqVar(vids[1]);
+chk(ev('eqVars.length')===2,'removing one variable removes exactly one');
+
+ev('chReagents.length=0;');window.addChReagent();window.addChReagent();
+const cids=idsOf('chReagents');
+chk(new Set(cids).size===2,'two reagents added in one tick get distinct ids');
+window.updCR(cids[1],'name','SECOND');
+chk(ev('chReagents.map(r=>r.name).join(",")')===',SECOND','naming the second reagent edits only the second');
+window.removeChReagent(cids[0]);
+chk(ev('chReagents.length')===1,'removing one reagent removes exactly one');
+
+ev('ymbSteps.length=0;');window.addYmbStep();window.addYmbStep();
+const sids=idsOf('ymbSteps');
+chk(new Set(sids).size===2,'two blocks added in one tick get distinct ids');
+ev('eqEqs.length=0;');window.addEqEquation();window.addEqEquation();
+chk(new Set(idsOf('eqEqs')).size===2,'two equations added in one tick get distinct ids');
+// Outputs draw on the same source, so their ids cannot collide with each other
+// or be confused with the block ids they sit beside.
+window.addOutput(sids[0]);window.addOutput(sids[0]);
+const oids=ev('ymbSteps[0].outputs.map(o=>o.id)');
+chk(new Set(oids).size===3,'three outputs on one block get distinct ids (got '+oids+')');
+chk(oids.every(o=>!sids.includes(o)),'output ids do not collide with block ids');
+
 // ---- structure editor -------------------------------------------------
 // Its panel initialises on the load event, so everything below runs after a
 // tick. The engine is stripped above, so this also proves the panel degrades
