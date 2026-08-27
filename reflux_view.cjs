@@ -1,6 +1,6 @@
 // Layout checks, run in a real browser.
 //
-// behave.cjs drives the page under jsdom, which parses and scripts but does no
+// reflux_behave.cjs drives the page under jsdom, which parses and scripts but does no
 // layout: every getBoundingClientRect there is zero, so nothing it asserts can
 // see a box. reflux_checks.cjs can only read the CSS text and confirm a rule was
 // written, not that it produced the size it was written for. This file closes

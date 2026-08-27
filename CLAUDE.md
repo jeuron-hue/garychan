@@ -52,23 +52,23 @@ build step, no server, no bundler, no npm dependencies at runtime.
 All five must pass before any commit:
 
     node reflux_checks.cjs
-    node behave.cjs
-    node e2e.cjs
-    node view.cjs
-    ./mutate.sh
+    node reflux_behave.cjs
+    node reflux_e2e.cjs
+    node reflux_view.cjs
+    ./reflux_mutate.sh
 
-The suites take an optional file path argument. mutate.sh injects deliberate
-defects and confirms each turns a suite red; a mutation that is not caught is
-a gap in the tests, not a pass. Mutation results are meaningless against a red
-baseline, so confirm the four suites are green first.
+The suites take an optional file path argument. reflux_mutate.sh injects
+deliberate defects and confirms each turns a suite red; a mutation that is not
+caught is a gap in the tests, not a pass. Mutation results are meaningless
+against a red baseline, so confirm the four suites are green first.
 
-They see different things. behave.cjs drives the page under jsdom, which does
-no layout, so every box there measures zero and no size can be asserted.
+They see different things. reflux_behave.cjs drives the page under jsdom, which
+does no layout, so every box there measures zero and no size can be asserted.
 reflux_checks.cjs reads the file as text and can only confirm a rule was
-written, not that it rendered. view.cjs drives headless Chrome over the
+written, not that it rendered. reflux_view.cjs drives headless Chrome over the
 DevTools protocol and measures the boxes the browser produced, which is the
 only suite that sees a layout defect leaving every rule intact. It needs a
 Chrome or Edge on the machine and honours CHROME_PATH; it adds no dependency.
 
 New functionality needs new assertions in the suites and new mutations in
-mutate.sh. Extending the code without extending the tests is not done.
+reflux_mutate.sh. Extending the code without extending the tests is not done.

@@ -146,7 +146,7 @@ chk(/if\(ab\.scrollIntoView\)try\{ab\.scrollIntoView\(/.test(app),'tab switch sc
 // The structure editor draws a fixed 900x1500 sheet and the engine defaults to
 // 1.5x, which rendered it 1350px wide on every screen - wider than even a
 // desktop panel. What the size actually comes out as is a runtime question only
-// view.cjs can answer; these just pin the mechanism.
+// reflux_view.cjs can answer; these just pin the mechanism.
 chk(/function fitZoomToClient\(\)/.test(app),'structure editor fits its zoom to the client width');
 chk(/function fitZoomWhenSettled\(\)/.test(app) && /new ResizeObserver\(function\(\)\{ fitZoomToClient\(\); \}\)/.test(app),
     'zoom refits when the client actually resizes, not after a guessed delay');

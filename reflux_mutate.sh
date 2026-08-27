@@ -77,17 +77,17 @@ run "vendored engine payload altered" "<style id=\"chem-theme-css\">" "<style id
 run "dead colour-swatch rule reintroduced" "span.K-StyleSheet-Detector{" ".K-Res-Icon-Color-NotSet{color:red}span.K-StyleSheet-Detector{" reflux_checks.cjs
 run "engine sheet scope exemption widened" "#panel-chem .K-Chem-Composer{" ".K-Chem-Composer{" reflux_checks.cjs
 echo "--- behavioural ---"
-run "wide-layout toggle dropped" "document.body.classList.toggle(\"wide\",id===\"ipcal\"||id===\"chem\");" "" behave.cjs
-run "panel not registered active" "document.getElementById(\"panel-\"+id).classList.add(\"active\");" "" behave.cjs
-run "theme default flipped to dark" "data-theme=\"light\">" "data-theme=\"dark\">" behave.cjs
-run "structure-editor tab dropped from the bar" "<button class=\"tab-btn\" onclick=\"switchTab('chem')\">Structure Editor</button>" "" behave.cjs
-run "missing-engine guard removed" "if (typeof Kekule === 'undefined' ||" "if (false \&\& typeof Kekule === 'undefined' ||" behave.cjs
-run "static UI no longer built at load" "    buildElementPicker();\n    buildTemplateButtons();" "    buildElementPicker();" behave.cjs
-run "activation no longer boots the editor" "if (panel.classList.contains('active')){ obs.disconnect(); bootEditor(); }" "if (false){ obs.disconnect(); bootEditor(); }" behave.cjs
+run "wide-layout toggle dropped" "document.body.classList.toggle(\"wide\",id===\"ipcal\"||id===\"chem\");" "" reflux_behave.cjs
+run "panel not registered active" "document.getElementById(\"panel-\"+id).classList.add(\"active\");" "" reflux_behave.cjs
+run "theme default flipped to dark" "data-theme=\"light\">" "data-theme=\"dark\">" reflux_behave.cjs
+run "structure-editor tab dropped from the bar" "<button class=\"tab-btn\" onclick=\"switchTab('chem')\">Structure Editor</button>" "" reflux_behave.cjs
+run "missing-engine guard removed" "if (typeof Kekule === 'undefined' ||" "if (false \&\& typeof Kekule === 'undefined' ||" reflux_behave.cjs
+run "static UI no longer built at load" "    buildElementPicker();\n    buildTemplateButtons();" "    buildElementPicker();" reflux_behave.cjs
+run "activation no longer boots the editor" "if (panel.classList.contains('active')){ obs.disconnect(); bootEditor(); }" "if (false){ obs.disconnect(); bootEditor(); }" reflux_behave.cjs
 echo "--- deep links and splash page ---"
-run "hash no longer validated against TABS" "TABS.indexOf(h)>=0?h:null" "h||null" behave.cjs
-run "hashchange listener dropped" "window.addEventListener(\"hashchange\",applyHashTab);" "" behave.cjs
-run "tab switch stops updating the hash" "try{history.replaceState(null,\"\",\"#\"+id);}catch(e){}" "" behave.cjs
+run "hash no longer validated against TABS" "TABS.indexOf(h)>=0?h:null" "h||null" reflux_behave.cjs
+run "hashchange listener dropped" "window.addEventListener(\"hashchange\",applyHashTab);" "" reflux_behave.cjs
+run "tab switch stops updating the hash" "try{history.replaceState(null,\"\",\"#\"+id);}catch(e){}" "" reflux_behave.cjs
 runsplash "splash link points at a tab that does not exist" "href=\"reflux.html#chem\">" "href=\"reflux.html#chemistry\">"
 runsplash "splash card loses its deep link" "href=\"reflux.html#ipcal\">" "href=\"reflux.html\">"
 echo "--- checkout hygiene ---"
@@ -105,52 +105,52 @@ run "free-text fields lose their opt-out from the cap" ".field:has(.eq-input),.f
 run "active tab no longer scrolled into view" "if(ab.scrollIntoView)try{ab.scrollIntoView({block:\"nearest\",inline:\"center\"});}catch(e){}" "" reflux_checks.cjs
 runsplash "splash loses its touch-pointer block" "@media(pointer:coarse)" "@media(pointer:fine)"
 runsplash "splash loses its tablet breakpoint" "@media(max-width:900px){.content{padding:24px 16px 32px;}}" ""
-# The point of view.cjs: reflux_checks.cjs asserts that a rule was written, so a
+# The point of reflux_view.cjs: reflux_checks.cjs asserts that a rule was written, so a
 # defect that leaves every rule intact and breaks only the rendered result is
 # invisible to it. Neither of these two turns the static checker red.
 echo "--- rendered layout (browser) ---"
-run "content forced wider than a phone viewport" ".content{padding:24px;max-width:960px;" ".content{padding:24px;min-width:1200px;max-width:960px;" view.cjs
-runsplash "splash footer link loses its touch sizing" ".footer a{display:inline-flex;align-items:center;min-height:44px;padding:0 4px;}" ".footer a{padding:0 4px;}" view.cjs
+run "content forced wider than a phone viewport" ".content{padding:24px;max-width:960px;" ".content{padding:24px;min-width:1200px;max-width:960px;" reflux_view.cjs
+runsplash "splash footer link loses its touch sizing" ".footer a{display:inline-flex;align-items:center;min-height:44px;padding:0 4px;}" ".footer a{padding:0 4px;}" reflux_view.cjs
 # Dropping the call leaves every definition in place, so the static checker sees
 # nothing wrong: only a rendered zoom shows it never ran.
-run "editor zoom fit never invoked" "      fitZoomWhenSettled();" "" view.cjs
+run "editor zoom fit never invoked" "      fitZoomWhenSettled();" "" reflux_view.cjs
 run "editor zoom clamp pinned to the engine default" "Math.max(0.6, Math.min(1.5," "Math.max(1.5, Math.min(1.5," reflux_checks.cjs
 echo "--- end-to-end arithmetic ---"
-run "RRT inverted" "var rrt = cp.rt / refPeak.rt;" "var rrt = refPeak.rt / cp.rt;" e2e.cjs
-run "v4 Area% fix reverted (negatives back in denominator)" "cp.corrected > 0 ? cp.corrected : 0" "cp.corrected" e2e.cjs
-run "empty-canvas export guard removed" "  function emptyGuard(){\n    if (engineGuard()) return true;" "  function emptyGuard(){\n    if (false) return true;" e2e.cjs
+run "RRT inverted" "var rrt = cp.rt / refPeak.rt;" "var rrt = refPeak.rt / cp.rt;" reflux_e2e.cjs
+run "v4 Area% fix reverted (negatives back in denominator)" "cp.corrected > 0 ? cp.corrected : 0" "cp.corrected" reflux_e2e.cjs
+run "empty-canvas export guard removed" "  function emptyGuard(){\n    if (engineGuard()) return true;" "  function emptyGuard(){\n    if (false) return true;" reflux_e2e.cjs
 # Results describe one file set in one order. Removing or reordering a sample
 # used to leave them standing while the exports read their headers from the
 # live list, filing every number under the wrong sample name.
 echo "--- results outliving their file set ---"
-run "file-set change no longer invalidates results" "    invalidateResults();\n    renderFileCards();" "    renderFileCards();" e2e.cjs
+run "file-set change no longer invalidates results" "    invalidateResults();\n    renderFileCards();" "    renderFileCards();" reflux_e2e.cjs
 # Hiding the panel without dropping the state leaves the export buttons live,
 # so this checks the state clear and not merely the DOM change.
-run "invalidation hides the panel but keeps the stale state" "    lastGroups = null; lastSettings = null; lastRefWarnings = []; lastSampleList = null;" "    lastRefWarnings = [];" e2e.cjs
+run "invalidation hides the panel but keeps the stale state" "    lastGroups = null; lastSettings = null; lastRefWarnings = []; lastSampleList = null;" "    lastRefWarnings = [];" reflux_e2e.cjs
 # The exports read the sample list captured at calculation time. Reverting them
 # to the live list is invisible while the invalidation above holds, so what is
 # testable is that the capture is real and load-bearing.
-run "calculation stops capturing its sample list" "    lastSampleList = sampleList;" "    lastSampleList = null;" e2e.cjs
+run "calculation stops capturing its sample list" "    lastSampleList = sampleList;" "    lastSampleList = null;" reflux_e2e.cjs
 # Variable names are substituted in one pass over whole identifiers. Matching
 # anything narrower puts a name back inside sqrt, min, abs and exp.
 echo "--- equation builder substitution ---"
-run "substitution stops matching whole identifiers" "/[A-Za-z_][A-Za-z_0-9]*/g" "/[A-Za-z_]/g" behave.cjs
-run "variable lookup becomes case-sensitive" "byLower[id.toLowerCase()]" "byLower[id]" behave.cjs
-run "bare x stops meaning multiply" "'*'),scope:safeScope}" "'+'),scope:safeScope}" behave.cjs
+run "substitution stops matching whole identifiers" "/[A-Za-z_][A-Za-z_0-9]*/g" "/[A-Za-z_]/g" reflux_behave.cjs
+run "variable lookup becomes case-sensitive" "byLower[id.toLowerCase()]" "byLower[id]" reflux_behave.cjs
+run "bare x stops meaning multiply" "'*'),scope:safeScope}" "'+'),scope:safeScope}" reflux_behave.cjs
 echo "--- user text escaped, not interpolated ---"
-run "escape helper stops escaping angle brackets and quotes" ".replace(/[&<>\"']/g,c=>(" ".replace(/[&]/g,c=>(" behave.cjs
-run "reagent name written unescaped into its field" "value=\"'+esc(r.name)+'\"" "value=\"'+r.name+'\"" behave.cjs
+run "escape helper stops escaping angle brackets and quotes" ".replace(/[&<>\"']/g,c=>(" ".replace(/[&]/g,c=>(" reflux_behave.cjs
+run "reagent name written unescaped into its field" "value=\"'+esc(r.name)+'\"" "value=\"'+r.name+'\"" reflux_behave.cjs
 # wt% is a mass basis and g/L a volume basis; density is the bridge between
 # them. Dropping it silently assumes every solvent weighs 1 g/mL.
 echo "--- dynamic row ids ---"
 # Reverting to a timestamp reproduces the original collision exactly: two rows
 # built in one tick share an id, so edits land on the wrong row and a single
 # remove deletes both.
-run "row ids revert to a timestamp and collide" "function nextId(){return ++rowSeq;}" "function nextId(){return Date.now();}" behave.cjs
-run "row ids revert to the timestamp-plus-random scheme" "function nextId(){return ++rowSeq;}" "function nextId(){return Date.now()+Math.round(Math.random());}" behave.cjs
+run "row ids revert to a timestamp and collide" "function nextId(){return ++rowSeq;}" "function nextId(){return Date.now();}" reflux_behave.cjs
+run "row ids revert to the timestamp-plus-random scheme" "function nextId(){return ++rowSeq;}" "function nextId(){return Date.now()+Math.round(Math.random());}" reflux_behave.cjs
 echo "--- wt% carries the solution density ---"
-run "wt% to g/L drops the density" "case'wt%':g=val*10*dens;break;}" "case'wt%':g=val*10;break;}" behave.cjs
-run "g/L to wt% drops the density" "case'wt%':result=g/(10*dens);break;}" "case'wt%':result=g/10;break;}" behave.cjs
+run "wt% to g/L drops the density" "case'wt%':g=val*10*dens;break;}" "case'wt%':g=val*10;break;}" reflux_behave.cjs
+run "g/L to wt% drops the density" "case'wt%':result=g/(10*dens);break;}" "case'wt%':result=g/10;break;}" reflux_behave.cjs
 echo
 echo "caught $pass, missed $fail, stale $stale"
 rm -f mut.html

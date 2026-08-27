@@ -242,51 +242,53 @@ Four suites. All must pass before the file is considered shippable.
 
 ```
 npm install jsdom
-node reflux_checks.cjs      # static: residue, structure, scoping, syntax, wiring
-node behave.cjs             # behavioural: tabs, panels, theme, exposed handlers
-node e2e.cjs                # end to end: parses fixtures, checks computed values
-node view.cjs               # rendered: measures real boxes in headless Chrome
-./mutate.sh                 # mutation: confirms the suites actually bite
+node reflux_checks.cjs  # static: residue, structure, scoping, syntax, wiring
+node reflux_behave.cjs  # behavioural: tabs, panels, theme, exposed handlers
+node reflux_e2e.cjs     # end to end: parses fixtures, checks computed values
+node reflux_view.cjs    # rendered: measures real boxes in headless Chrome
+./reflux_mutate.sh      # mutation: confirms the suites actually bite
 ```
 
-The first three run on Node with jsdom. `view.cjs` does not: it drives a
+The first three run on Node with jsdom. `reflux_view.cjs` does not: it drives a
 headless Chrome or Edge over the DevTools protocol and measures the boxes the
 browser actually produced. It needs a Chrome or Edge on the machine and honours
 `CHROME_PATH`, but adds no dependency.
 
 The three see different things, and the difference is the point.
 `reflux_checks.cjs` reads the file as text, so it can confirm a rule was
-written but not that it rendered. `behave.cjs` drives the page under jsdom,
-which does no layout, so every box there measures zero and no size can be
-asserted. `view.cjs` is the only one that catches a layout defect that leaves
-every rule intact.
+written but not that it rendered. `reflux_behave.cjs` drives the page under
+jsdom, which does no layout, so every box there measures zero and no size can
+be asserted. `reflux_view.cjs` is the only one that catches a layout defect
+that leaves every rule intact.
 
-`e2e.cjs` builds LabSolutions-shaped fixtures in memory, drives the real file
-input, and checks computed RRT and Area% values against hand arithmetic. It
-also runs the Mode 2 over-subtraction case, where a blank larger than the
+`reflux_e2e.cjs` builds LabSolutions-shaped fixtures in memory, drives the real
+file input, and checks computed RRT and Area% values against hand arithmetic.
+It also runs the Mode 2 over-subtraction case, where a blank larger than the
 sample drives the corrected reference area negative, since that is the
 condition under which Area% output previously came back blank.
 
-`e2e.cjs` also holds the file-set staleness case: it calculates over three
-samples, exports, and then removes and reorders a sample to confirm the results
-and every export path go quiet until Calculate is pressed again. It asserts the
-invariant the old defect broke, that every exported row is the width of its
-header row, and that a rename still leaves the results standing.
+`reflux_e2e.cjs` also holds the file-set staleness case: it calculates over
+three samples, exports, and then removes and reorders a sample to confirm the
+results and every export path go quiet until Calculate is pressed again. It
+asserts the invariant the old defect broke, that every exported row is the
+width of its header row, and that a rename still leaves the results standing.
 
-`mutate.sh` injects sixty-two deliberate defects and confirms each one turns
-a suite red. Eight of them target the splash page, the deep links and checkout
-hygiene, mutating `index.html` and `.gitattributes` rather than `reflux.html`,
-so the cross-file assertions are proven rather than assumed. A mutation that is
-not caught is a gap in the tests, not a pass. A mutation whose target string no
-longer exists is also a gap, because it has silently stopped testing anything,
-so it is reported as `STALE` and fails the run. Note that mutation results only
-mean anything against a green baseline; run the four suites first.
+`reflux_mutate.sh` injects sixty-two deliberate defects and confirms each one
+turns a suite red. Eight of them target the splash page, the deep links and
+checkout hygiene, mutating `index.html` and `.gitattributes` rather than
+`reflux.html`, so the cross-file assertions are proven rather than assumed. A
+mutation that is not caught is a gap in the tests, not a pass. A mutation whose
+target string no longer exists is also a gap, because it has silently stopped
+testing anything, so it is reported as `STALE` and fails the run. Note that
+mutation results only mean anything against a green baseline; run the four
+suites first.
 
-`behave.cjs` and `e2e.cjs` strip the two vendored engine blocks before loading
-the file, exactly as they already strip the CDN script tags. The engine is 2.7
-MB of third-party code they do not test, and its editor needs a real canvas
-that jsdom does not provide. Stripping it also exercises the Structure Editor's
-engine-absent path, which must degrade to a message rather than throw.
+`reflux_behave.cjs` and `reflux_e2e.cjs` strip the two vendored engine blocks
+before loading the file, exactly as they already strip the CDN script tags. The
+engine is 2.7 MB of third-party code they do not test, and its editor needs a
+real canvas that jsdom does not provide. Stripping it also exercises the
+Structure Editor's engine-absent path, which must degrade to a message rather
+than throw.
 
 What this does not cover: structure rendering and PNG/SVG export cannot run
 under jsdom, so they are not asserted here. Those paths were verified in
